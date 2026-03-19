@@ -424,6 +424,23 @@ async def api_update_job_profile(request: Request):
     return _redirect("/relocation", "Profile updated", "success")
 
 
+# ─── REMINDERS PAGE ───────────────────────────────────────────────────────────
+
+@app.get("/reminders", response_class=HTMLResponse)
+def reminders_page(request: Request, message: str | None = None, level: str = "info"):
+    ctx = _base_ctx(request)
+    all_reminders = list_reminders(1, "all")
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    ctx.update({
+        "active_page": "reminders",
+        "reminders": all_reminders,
+        "message": message,
+        "message_level": level,
+        "now_str": now_str,
+    })
+    return templates.TemplateResponse(request, "reminders.html", ctx)
+
+
 # ─── API: REMINDERS ───────────────────────────────────────────────────────────
 
 @app.get("/api/reminders")

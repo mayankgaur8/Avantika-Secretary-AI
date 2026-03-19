@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Reminders — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Reminders{% endblock %}
+{% block page_subtitle %}Scheduled alerts and follow-up nudges{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-secondary btn-sm" onclick="openAddModal()">+ New Reminder</button>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats row -->
+<div class="stats-row" style="grid-template-columns:repeat(3,1fr); margin-bottom:20px;">
+  {% set pending = reminders | selectattr("status","eq","pending") | list %}
+  {% set sent    = reminders | selectattr("status","eq","sent")    | list %}
+  {% set due_now = pending | selectattr("scheduled_for","le", now_str) | list %}
+  <div class="stat-card" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Pending</div>
+    <div class="stat-value" style="font-size:22px;">{{ pending | length }}</div>
+  </div>
+  <div class="stat-card amber" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Due Now</div>
+    <div class="stat-value" style="font-size:22px;">{{ due_now | length }}</div>
+  </div>
+  <div class="stat-card" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Sent</div>
+    <div class="stat-value" style="font-size:22px;">{{ sent | length }}</div>
+  </div>
+</div>
+
+<!-- Reminders table -->
+<div class="card">
+  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+    <span class="card-title">All Reminders</span>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="filterReminders('all')" id="filter-all">All</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterReminders('pending')" id="filter-pending">Pending</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterReminders('sent')" id="filter-sent">Sent</button>
+    </div>
+  </div>
+  <div class="card-body" style="padding:0;">
+    {% if reminders %}
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="padding:10px 16px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:11px; text-transform:uppercase;">Title</th>
+          <th style="padding:10px 16px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:11px; text-transform:uppercase;">Scheduled</th>
+          <th style="padding:10px 16px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:11px; text-transform:uppercase;">Type</th>
+          <th style="padding:10px 16px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:11px; text-transform:uppercase;">Channel</th>
+          <th style="padding:10px 16px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:11px; text-transform:uppercase;">Status</th>
+          <th style="padding:10px 16px; text-align:left; font-weight:600; color:var(--text-secondary); font-size:11px; text-transform:uppercase;"></th>
+        </tr>
+      </thead>
+      <tbody id="remindersBody">
+        {% for r in reminders %}
+        <tr class="reminder-row" data-status="{{ r.status }}"
+            style="border-bottom:1px solid var(--border); transition:background 0.15s;">
+          <td style="padding:12px 16px;">
+            <div style="font-weight:600; color:var(--text-primary);">{{ r.title }}</div>
+            {% if r.message %}
+            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">{{ r.message[:80] }}{% if r.message|length > 80 %}…{% endif %}</div>
+            {% endif %}
+          </td>
+          <td style="padding:12px 16px; color:{% if r.status == 'pending' and r.scheduled_for <= now_str %}var(--amber){% else %}var(--text-secondary){% endif %}; white-space:nowrap;">
+            {{ r.scheduled_for[:16] if r.scheduled_for else '—' }}
+            {% if r.status == 'pending' and r.scheduled_for and r.scheduled_for <= now_str %}
+            <span class="tag amber" style="margin-left:4px; font-size:10px;">Overdue</span>
+            {% endif %}
+          </td>
+          <td style="padding:12px 16px;">
+            <span class="tag">{{ r.reminder_type or 'custom' }}</span>
+          </td>
+          <td style="padding:12px 16px; color:var(--text-secondary);">
+            {{ r.channel or '—' }}
+          </td>
+          <td style="padding:12px 16px;">
+            {% if r.status == 'sent' %}
+            <span class="tag green">sent</span>
+            {% else %}
+            <span class="tag amber">pending</span>
+            {% endif %}
+          </td>
+          <td style="padding:12px 16px;">
+            {% if r.status == 'pending' %}
+            <button class="btn btn-ghost btn-sm" style="color:var(--red); font-size:11px;"
+                    onclick="deleteReminder({{ r.id }}, this)">Delete</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:48px; text-align:center; color:var(--text-muted);">
+      <div style="font-size:32px; margin-bottom:12px;">◷</div>
+      <div style="font-size:14px; font-weight:600; margin-bottom:6px;">No reminders yet</div>
+      <div style="font-size:12px;">Add one to stay on top of follow-ups and deadlines.</div>
+      <button class="btn btn-primary btn-sm" style="margin-top:16px;" onclick="openAddModal()">+ New Reminder</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ADD REMINDER MODAL -->
+<div class="modal-overlay" id="addReminderModal" style="display:none;">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">New Reminder</div>
+        <div class="modal-subtitle">Schedule an alert or follow-up nudge</div>
+      </div>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="addReminderForm" onsubmit="submitReminder(event)">
+        <div class="form-group">
+          <label class="form-label">Title *</label>
+          <input type="text" class="form-input" name="title" required placeholder="e.g. Follow up with SAP recruiter">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Scheduled For *</label>
+            <input type="datetime-local" class="form-input" name="scheduled_for" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="reminder_type">
+              <option value="custom">Custom</option>
+              <option value="follow_up">Follow-up</option>
+              <option value="interview">Interview</option>
+              <option value="visa">Visa</option>
+              <option value="flight">Flight</option>
+              <option value="deadline">Deadline</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message</label>
+          <textarea class="form-textarea" name="message" placeholder="Optional details or notes..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Channel</label>
+          <select class="form-select" name="channel">
+            <option value="whatsapp">WhatsApp</option>
+            <option value="email">Email</option>
+            <option value="app">In-app</option>
+          </select>
+        </div>
+        <div class="modal-footer" style="padding:0; margin-top:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="closeAddModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Reminder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openAddModal() {
+  document.getElementById('addReminderModal').style.display = 'flex';
+  // default datetime to now + 1 day
+  const dt = new Date(Date.now() + 86400000);
+  dt.setSeconds(0, 0);
+  document.querySelector('[name="scheduled_for"]').value = dt.toISOString().slice(0,16);
+}
+
+function closeAddModal() {
+  document.getElementById('addReminderModal').style.display = 'none';
+}
+
+function submitReminder(e) {
+  e.preventDefault();
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form));
+  // Convert datetime-local to ISO string with seconds
+  if (data.scheduled_for) data.scheduled_for = data.scheduled_for + ':00';
+
+  fetch('/api/reminders', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(() => { location.reload(); })
+  .catch(err => alert('Error saving reminder: ' + err));
+}
+
+function deleteReminder(id, btn) {
+  if (!confirm('Delete this reminder?')) return;
+  fetch('/api/reminders/' + id, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(() => {
+      const row = btn.closest('tr');
+      row.style.opacity = '0.4';
+      setTimeout(() => row.remove(), 300);
+    });
+}
+
+function filterReminders(status) {
+  document.querySelectorAll('#remindersBody .reminder-row').forEach(row => {
+    row.style.display = (status === 'all' || row.dataset.status === status) ? '' : 'none';
+  });
+  document.querySelectorAll('[id^="filter-"]').forEach(b => b.classList.remove('active'));
+  document.getElementById('filter-' + status)?.classList.add('active');
+}
+
+// Close modal on overlay click
+document.getElementById('addReminderModal').addEventListener('click', function(e) {
+  if (e.target === this) closeAddModal();
+});
+</script>
+{% endblock %}
