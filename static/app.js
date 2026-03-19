@@ -1,5 +1,34 @@
 /* SecretaryAI — Shared Frontend Logic */
 
+// ─── MOBILE SIDEBAR ───────────────────────────────────────────────────────────
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  const isOpen = sidebar.classList.contains('open');
+  if (isOpen) {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('visible');
+  } else {
+    sidebar.classList.add('open');
+    overlay.classList.add('visible');
+  }
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('visible');
+}
+
+// Close sidebar when a nav link is tapped on mobile
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.innerWidth <= 768) {
+    document.querySelectorAll('.nav-item').forEach(link => {
+      link.addEventListener('click', closeSidebar);
+    });
+  }
+});
+
 // ─── JOB MODAL ───────────────────────────────────────────────────────────────
 
 function openJobModal(jobId, company, role) {
@@ -17,10 +46,6 @@ function openJobModal(jobId, company, role) {
         body.innerHTML = `<div class="text-muted text-sm">Could not load job details.</div>`;
         return;
       }
-      const stageColor = {
-        'Identified': '#6366f1', 'Applied': '#3b82f6', 'Responded': '#06b6d4',
-        'Interview': '#f59e0b', 'Offer': '#10b981', 'Rejected': '#ef4444'
-      };
       const stages = ['Identified','Applied','Responded','Interview','Offer','Rejected'];
       const curIdx = stages.indexOf(job.pipeline_stage || 'Identified');
       const stageButtons = stages.map((s,i) => `
