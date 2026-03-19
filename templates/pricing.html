@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Pricing — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Plans & Billing{% endblock %}
+{% block page_subtitle %}Choose the plan that matches your ambition{% endblock %}
+
+{% block content %}
+
+<div style="max-width:1100px; margin:0 auto;">
+
+  <!-- TOGGLE -->
+  <div style="text-align:center; margin-bottom:32px;">
+    <div style="display:inline-flex; background:var(--bg-card); border:1px solid var(--border); border-radius:30px; padding:4px; gap:2px;">
+      <button class="btn btn-primary" id="monthlyBtn" onclick="showMonthly()" style="border-radius:24px; padding:7px 20px;">Monthly</button>
+      <button class="btn btn-ghost" id="annualBtn" onclick="showAnnual()" style="border-radius:24px; padding:7px 20px;">Annual <span style="color:var(--green); font-size:11px; margin-left:4px;">Save 20%</span></button>
+    </div>
+  </div>
+
+  <!-- PRICING CARDS -->
+  <div class="pricing-grid">
+
+    <!-- FREE -->
+    <div class="pricing-card">
+      <div class="pricing-plan">Free</div>
+      <div class="pricing-price"><span>$</span>0</div>
+      <div class="pricing-period monthly-price">Forever free</div>
+      <div class="pricing-period annual-price hidden">Forever free</div>
+      <div class="pricing-desc">Get started tracking your job search and travel planning.</div>
+      <ul class="pricing-features">
+        <li>5 job searches / month</li>
+        <li>Pipeline tracking (up to 5 companies)</li>
+        <li>1 active trip</li>
+        <li>Basic AI chat (website only)</li>
+        <li class="locked">No WhatsApp</li>
+        <li class="locked">No reminders or alerts</li>
+        <li class="locked">No file uploads</li>
+        <li class="locked">No automation</li>
+      </ul>
+      <a href="/onboarding" class="btn btn-secondary w-full" style="justify-content:center;">Get Started Free</a>
+    </div>
+
+    <!-- BASIC -->
+    <div class="pricing-card">
+      <div class="pricing-plan">Basic</div>
+      <div class="pricing-price monthly-price"><span>$</span>19</div>
+      <div class="pricing-price annual-price hidden"><span>$</span>15</div>
+      <div class="pricing-period monthly-price">per month</div>
+      <div class="pricing-period annual-price hidden">per month, billed annually</div>
+      <div class="pricing-desc">For individual job seekers and occasional travelers who want more.</div>
+      <ul class="pricing-features">
+        <li>20 job searches / month</li>
+        <li>Pipeline (up to 20 companies)</li>
+        <li>3 active trips</li>
+        <li>WhatsApp alerts (receive-only)</li>
+        <li>3 automated reminders / month</li>
+        <li>1 resume upload</li>
+        <li>Basic company research</li>
+        <li>Weekly email summary</li>
+        <li class="locked">No full WhatsApp 2-way</li>
+        <li class="locked">No relocation hub</li>
+      </ul>
+      <button class="btn btn-secondary w-full" style="justify-content:center;" onclick="startCheckout('basic')">Upgrade to Basic</button>
+    </div>
+
+    <!-- PRO — FEATURED -->
+    <div class="pricing-card featured">
+      <div class="pricing-badge">Most Popular</div>
+      <div class="pricing-plan">Pro</div>
+      <div class="pricing-price monthly-price"><span>$</span>49</div>
+      <div class="pricing-price annual-price hidden"><span>$</span>39</div>
+      <div class="pricing-period monthly-price">per month</div>
+      <div class="pricing-period annual-price hidden">per month, billed annually</div>
+      <div class="pricing-desc">Full AI secretary experience. Unlimited pipeline, WhatsApp, automations, and relocation support.</div>
+      <ul class="pricing-features">
+        <li>Unlimited job searches</li>
+        <li>Unlimited pipeline companies</li>
+        <li>Unlimited trips & price watches</li>
+        <li>Full WhatsApp 2-way AI (commands + alerts)</li>
+        <li>Unlimited reminders & fare alerts</li>
+        <li>10 file uploads (resume, docs)</li>
+        <li>Full company enrichment</li>
+        <li>Cover letters & follow-up drafting</li>
+        <li>Relocation Hub (visa tracker)</li>
+        <li>Salary negotiation coaching</li>
+        <li>Resume AI review (3/month)</li>
+        <li>Calendar sync (Google/Outlook)</li>
+        <li>Priority AI response speed</li>
+      </ul>
+      <button class="btn btn-primary w-full" style="justify-content:center;" onclick="startCheckout('pro')">
+        Start 14-Day Free Trial
+      </button>
+      <div style="text-align:center; font-size:11px; color:var(--text-muted); margin-top:8px;">No credit card required</div>
+    </div>
+
+    <!-- CONCIERGE -->
+    <div class="pricing-card">
+      <div class="pricing-plan">Concierge</div>
+      <div class="pricing-price monthly-price"><span>$</span>149</div>
+      <div class="pricing-price annual-price hidden"><span>$</span>119</div>
+      <div class="pricing-period monthly-price">per month</div>
+      <div class="pricing-period annual-price hidden">per month, billed annually</div>
+      <div class="pricing-desc">For executives who want human-assisted quality and proactive daily support.</div>
+      <ul class="pricing-features">
+        <li>Everything in Pro</li>
+        <li>Human resume review (48h turnaround)</li>
+        <li>Human cover letter review (2/month)</li>
+        <li>Dedicated WhatsApp number</li>
+        <li>Proactive daily WhatsApp briefings</li>
+        <li>Monthly job market report (target country)</li>
+        <li>Visa consultation (30 min, 1/quarter)</li>
+        <li>Concierge human escalation (9am–6pm)</li>
+        <li>Priority support (4h SLA)</li>
+        <li>Onboarding call (30 min setup)</li>
+      </ul>
+      <button class="btn btn-secondary w-full" style="justify-content:center;" onclick="startCheckout('concierge')">Get Concierge</button>
+    </div>
+
+  </div>
+
+  <!-- COMPARISON TABLE -->
+  <div style="margin-top:48px;">
+    <div class="section-header" style="margin-bottom:24px;">
+      <div><div class="section-title">Full Comparison</div></div>
+    </div>
+    <div class="card" style="overflow:hidden;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:35%;">Feature</th>
+            <th style="text-align:center;">Free</th>
+            <th style="text-align:center;">Basic</th>
+            <th style="text-align:center; color:var(--accent-light);">Pro</th>
+            <th style="text-align:center;">Concierge</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set rows = [
+            ('Job searches/month', '5', '20', 'Unlimited', 'Unlimited'),
+            ('Pipeline companies', '5', '20', 'Unlimited', 'Unlimited'),
+            ('Active trips', '1', '3', 'Unlimited', 'Unlimited'),
+            ('WhatsApp integration', '—', 'Alerts only', 'Full 2-way', 'Dedicated #'),
+            ('Automated reminders', '—', '3/month', 'Unlimited', 'Unlimited + proactive'),
+            ('File uploads', '—', '1', '10', 'Unlimited'),
+            ('Cover letter drafting', '—', '—', '✓', '✓ + Human review'),
+            ('Relocation Hub', '—', '—', '✓', '✓'),
+            ('Visa tracker', '—', '—', '✓', '✓'),
+            ('Salary coaching', '—', '—', '✓', '✓ + Benchmarks'),
+            ('Resume AI review', '—', '—', '3/month', 'Unlimited'),
+            ('Calendar sync', '—', '—', '✓', '✓'),
+            ('Human support', '—', 'Email', 'Email', 'Dedicated + call'),
+            ('Onboarding call', '—', '—', '—', '30 min session'),
+          ] %}
+          {% for feature, free, basic, pro, conc in rows %}
+          <tr>
+            <td style="font-weight:500;">{{ feature }}</td>
+            <td style="text-align:center; color:var(--text-muted); font-size:12px;">{{ free }}</td>
+            <td style="text-align:center; font-size:12px;">{{ basic }}</td>
+            <td style="text-align:center; font-size:12px; color:var(--accent-light); font-weight:600;">{{ pro }}</td>
+            <td style="text-align:center; font-size:12px;">{{ conc }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ADD-ONS -->
+  <div style="margin-top:40px;">
+    <div class="section-header" style="margin-bottom:20px;">
+      <div>
+        <div class="section-title">Pay-per-Use Add-ons</div>
+        <div class="section-subtitle">One-time purchases — no subscription needed</div>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:14px;">
+      {% set addons = [
+        ('Resume Review', '$9', 'Expert AI review with German market optimization tips'),
+        ('Application Pack', '$49', '10 tailored cover letters + recruiter messages'),
+        ('Country Job Report', '$29', 'Full job market analysis for your target country'),
+        ('Interview Prep Session', '$39', 'AI-powered prep guide for specific company + role'),
+        ('Relocation Pack', '$199', 'Complete Germany/Dubai/Canada relocation bundle'),
+        ('Concierge Trip Session', '$79', '1-hour human + AI assisted trip planning session'),
+      ] %}
+      {% for name, price, desc in addons %}
+      <div class="card" style="padding:18px;">
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">{{ name }}</div>
+        <div style="font-size:22px; font-weight:800; color:var(--green); margin-bottom:8px;">{{ price }}</div>
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:14px; line-height:1.5;">{{ desc }}</div>
+        <button class="btn btn-secondary btn-sm w-full" style="justify-content:center;" onclick="buyAddon('{{ name }}')">Purchase</button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div style="margin-top:40px; max-width:680px;">
+    <div class="section-title" style="margin-bottom:20px;">FAQ</div>
+    {% set faqs = [
+      ('Can I cancel anytime?', 'Yes. Cancel anytime from your billing settings. No questions asked.'),
+      ('Is my data secure?', 'Yes. All data is encrypted at rest. Resumes and documents are stored securely and never shared or used for training.'),
+      ('Does the WhatsApp feature work globally?', 'Yes. We use Twilio WhatsApp API which works in 180+ countries. Message rates may vary.'),
+      ('What if I need human help?', 'Pro and Concierge plans include escalation to a real human. Basic plan gets email support.'),
+      ('Is there a free trial for Pro?', 'Yes — 14 days free trial of Pro, no credit card required. Switch or cancel before the trial ends.'),
+    ] %}
+    {% for q, a in faqs %}
+    <div style="border-bottom:1px solid var(--border); padding:16px 0;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:6px; cursor:pointer;" onclick="this.nextElementSibling.classList.toggle('hidden')">{{ q }} <span style="color:var(--text-muted);">+</span></div>
+      <div style="font-size:13px; color:var(--text-secondary); line-height:1.6;">{{ a }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showMonthly() {
+  document.querySelectorAll('.monthly-price').forEach(e => e.classList.remove('hidden'));
+  document.querySelectorAll('.annual-price').forEach(e => e.classList.add('hidden'));
+  document.getElementById('monthlyBtn').className = 'btn btn-primary';
+  document.getElementById('annualBtn').className = 'btn btn-ghost';
+}
+function showAnnual() {
+  document.querySelectorAll('.monthly-price').forEach(e => e.classList.add('hidden'));
+  document.querySelectorAll('.annual-price').forEach(e => e.classList.remove('hidden'));
+  document.getElementById('annualBtn').className = 'btn btn-primary';
+  document.getElementById('monthlyBtn').className = 'btn btn-ghost';
+}
+// Reapply pricing-period styles
+document.querySelectorAll('.pricing-price.monthly-price, .pricing-period.monthly-price, .pricing-price.annual-price, .pricing-period.annual-price').forEach(el => {
+  if (el.tagName === 'DIV' && el.classList.contains('pricing-price')) {
+    el.style.cssText = 'font-size:42px;font-weight:800;line-height:1;margin-bottom:4px;';
+  }
+});
+
+function startCheckout(plan) {
+  alert(`Checkout for ${plan} plan — Stripe integration coming soon.\n\nFor now, your account is set to Pro for full access.`);
+}
+function buyAddon(name) {
+  alert(`Purchase: ${name} — Stripe integration coming soon.`);
+}
+</script>
+{% endblock %}

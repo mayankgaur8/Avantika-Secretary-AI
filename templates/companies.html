@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Company Tracker — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Company Tracker{% endblock %}
+{% block page_subtitle %}Monitor target companies and watch for job openings{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-secondary btn-sm" onclick="document.getElementById('addCompanyModal').classList.add('open')">+ Add Company</button>
+<form method="post" action="/api/companies/seed" style="display:inline;">
+  <button class="btn btn-ghost btn-sm">↻ Load Defaults</button>
+</form>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="section-header">
+  <div>
+    <div class="section-title">{{ companies | length }} Companies Tracked</div>
+    <div class="section-subtitle">Monitoring for new Java Lead / Engineering Manager openings</div>
+  </div>
+  <div class="section-actions">
+    <input type="text" id="companySearch" class="form-input" style="width:200px;" placeholder="Search companies..." oninput="filterCompanies(this.value)">
+  </div>
+</div>
+
+{% if companies %}
+<div id="companyGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(420px,1fr)); gap:14px;">
+  {% for c in companies %}
+  <div class="company-card" data-name="{{ c.company_name | lower }}">
+    <div class="company-logo">{{ c.company_name[:2] | upper }}</div>
+    <div class="company-info">
+      <div class="company-name">{{ c.company_name }}</div>
+      <div class="company-meta">
+        {% if c.company_size %}{{ c.company_size }} employees · {% endif %}
+        {% if c.company_domain %}{{ c.company_domain }}{% endif %}
+        {% if c.glassdoor_rating and c.glassdoor_rating > 0 %} · ⭐ {{ c.glassdoor_rating }}{% endif %}
+      </div>
+      <div class="company-tags">
+        {% if c.visa_sponsorship and c.visa_sponsorship not in ['Unknown', 'No'] %}
+        <span class="tag green">Visa: {{ c.visa_sponsorship }}</span>
+        {% elif c.visa_sponsorship == 'No' %}
+        <span class="tag red">No Visa</span>
+        {% endif %}
+        {% if c.tech_stack %}
+          {% for tech in c.tech_stack.split(',')[:3] %}
+          <span class="tag accent">{{ tech.strip() }}</span>
+          {% endfor %}
+        {% endif %}
+      </div>
+      {% if c.job_keywords %}
+      <div style="margin-top:6px; font-size:11px; color:var(--text-muted);">
+        Watching: {{ c.job_keywords }}
+      </div>
+      {% endif %}
+    </div>
+    <div class="company-actions">
+      <button class="btn btn-secondary btn-sm" onclick="addToPipeline('{{ c.company_name | replace("'","") }}')">+ Pipeline</button>
+      <button class="btn {{ 'btn-success' if c.alert_on_new_job else 'btn-ghost' }} btn-sm"
+        onclick="toggleAlert({{ c.id }}, this)">
+        {{ '🔔 Watching' if c.alert_on_new_job else '🔕 Watch' }}
+      </button>
+      <button class="btn btn-danger btn-sm btn-icon" onclick="deleteCompany({{ c.id }}, this)">✕</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-state-icon">⬡</div>
+    <div class="empty-state-title">No companies tracked yet</div>
+    <div class="empty-state-desc">Load default German and Dubai tech companies, or add your own targets.</div>
+    <form method="post" action="/api/companies/seed" style="margin-top:16px; display:inline;">
+      <button class="btn btn-primary">Load Default Companies</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- ADD COMPANY MODAL -->
+<div class="modal-overlay" id="addCompanyModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title">Add Company</div><div class="modal-subtitle">Track a target company</div></div>
+      <button class="modal-close" onclick="document.getElementById('addCompanyModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="addCompanyForm" onsubmit="submitAddCompany(event)">
+        <div class="form-group">
+          <label class="form-label">Company Name *</label>
+          <input type="text" class="form-input" name="company_name" required placeholder="e.g. SAP SE">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Domain</label>
+            <input type="text" class="form-input" name="company_domain" placeholder="sap.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Company Size</label>
+            <input type="text" class="form-input" name="company_size" placeholder="e.g. 10,000+">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tech Stack</label>
+          <input type="text" class="form-input" name="tech_stack" placeholder="Java, Kubernetes, AWS">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Glassdoor Rating</label>
+            <input type="number" step="0.1" min="0" max="5" class="form-input" name="glassdoor_rating" placeholder="4.0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Visa Sponsorship</label>
+            <select class="form-select" name="visa_sponsorship">
+              <option value="Unknown">Unknown</option>
+              <option value="Yes">Yes</option>
+              <option value="Maybe">Maybe</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Job Keywords (watch these roles)</label>
+          <input type="text" class="form-input" name="job_keywords" placeholder="Java,Lead,Senior">
+        </div>
+        <div class="modal-footer" style="padding:0; margin-top:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('addCompanyModal').classList.remove('open')">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Add Company</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterCompanies(q) {
+  const cards = document.querySelectorAll('.company-card');
+  cards.forEach(c => {
+    c.style.display = c.dataset.name.includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+
+function toggleAlert(id, btn) {
+  fetch(`/api/companies/${id}/toggle-alert`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.textContent = d.alert_on_new_job ? '🔔 Watching' : '🔕 Watch';
+      btn.className = d.alert_on_new_job ? 'btn btn-success btn-sm' : 'btn btn-ghost btn-sm';
+    });
+}
+
+function deleteCompany(id, btn) {
+  if (!confirm('Remove this company from tracking?')) return;
+  fetch(`/api/companies/${id}`, {method:'DELETE'})
+    .then(r => r.json())
+    .then(() => btn.closest('.company-card').remove());
+}
+
+function addToPipeline(companyName) {
+  openAddModal();
+  setTimeout(() => {
+    document.querySelector('#addJobForm input[name="company"]').value = companyName;
+  }, 100);
+}
+
+function submitAddCompany(e) {
+  e.preventDefault();
+  const form = new FormData(e.target);
+  const data = Object.fromEntries(form.entries());
+  fetch('/api/companies', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(() => window.location.reload());
+}
+</script>
+{% endblock %}

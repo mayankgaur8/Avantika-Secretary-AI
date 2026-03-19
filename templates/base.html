@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Avantika SecretaryAI{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="/static/avantika-logo.svg">
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="/static/avantika-logo.svg" alt="Avantika SecretaryAI logo" class="site-logo sidebar-logo">
+      <div>
+        <div class="brand-name">Avantika SecretaryAI</div>
+        <div class="brand-plan">{% if user %}{{ user.plan | upper }}{% else %}PRO{% endif %} Plan</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <span class="nav-label">Overview</span>
+        <a href="/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+          <span class="nav-icon">⊞</span> Dashboard
+        </a>
+        <a href="/chat" class="nav-item {% if active_page == 'chat' %}active{% endif %}">
+          <span class="nav-icon">◎</span> AI Chat
+        </a>
+      </div>
+
+      <div class="nav-section">
+        <span class="nav-label">Career</span>
+        <a href="/pipeline" class="nav-item {% if active_page == 'pipeline' %}active{% endif %}">
+          <span class="nav-icon">▣</span> Job Pipeline
+          {% if pipeline_summary and pipeline_summary.follow_ups_due > 0 %}
+          <span class="nav-badge">{{ pipeline_summary.follow_ups_due }}</span>
+          {% endif %}
+        </a>
+        <a href="/companies" class="nav-item {% if active_page == 'companies' %}active{% endif %}">
+          <span class="nav-icon">⬡</span> Companies
+        </a>
+        <a href="/relocation" class="nav-item {% if active_page == 'relocation' %}active{% endif %}">
+          <span class="nav-icon">✈</span> Relocation Hub
+        </a>
+      </div>
+
+      <div class="nav-section">
+        <span class="nav-label">Travel</span>
+        <a href="/travel" class="nav-item {% if active_page == 'travel' %}active{% endif %}">
+          <span class="nav-icon">◈</span> Travel Planner
+        </a>
+        <a href="/reminders" class="nav-item {% if active_page == 'reminders' %}active{% endif %}">
+          <span class="nav-icon">◷</span> Reminders
+          {% if reminders_due and reminders_due > 0 %}
+          <span class="nav-badge amber">{{ reminders_due }}</span>
+          {% endif %}
+        </a>
+      </div>
+
+      <div class="nav-section">
+        <span class="nav-label">Channels</span>
+        <a href="/whatsapp" class="nav-item {% if active_page == 'whatsapp' %}active{% endif %}">
+          <span class="nav-icon">◉</span> WhatsApp
+        </a>
+      </div>
+
+      <div class="nav-section">
+        <span class="nav-label">Account</span>
+        <a href="/pricing" class="nav-item {% if active_page == 'pricing' %}active{% endif %}">
+          <span class="nav-icon">◆</span> Plans & Billing
+        </a>
+        <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+          <span class="nav-icon">⚙</span> Settings
+        </a>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="user-avatar">{% if user %}{{ user.name[0] | upper }}{% else %}M{% endif %}</div>
+        <div class="user-info">
+          <div class="user-name">{% if user %}{{ user.name }}{% else %}Mayank Gaur{% endif %}</div>
+          <div class="user-plan">{% if user %}{{ user.plan | capitalize }} Plan{% else %}Pro Plan{% endif %}</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">{% block page_title %}Dashboard{% endblock %}</div>
+        <div class="topbar-subtitle">{% block page_subtitle %}{% endblock %}</div>
+      </div>
+      <div class="topbar-actions">
+        {% block topbar_actions %}
+        <a href="/chat" class="btn btn-primary btn-sm">
+          <span>✦</span> Ask AI
+        </a>
+        {% endblock %}
+      </div>
+    </header>
+
+    <main class="content">
+      {% if message %}
+      <div class="flash {{ message_level or 'info' }}">
+        <span>{% if message_level == 'success' %}✓{% elif message_level == 'error' %}✕{% else %}ℹ{% endif %}</span>
+        {{ message }}
+      </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<!-- JOB DETAIL MODAL -->
+<div class="modal-overlay" id="jobModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modalCompany">Company</div>
+        <div class="modal-subtitle" id="modalRole">Role</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <!-- Dynamic content -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary btn-sm" id="modalPrimaryAction">Generate Draft Pack</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD JOB MODAL -->
+<div class="modal-overlay" id="addJobModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Add to Pipeline</div>
+        <div class="modal-subtitle">Track a new company or job opportunity</div>
+      </div>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="addJobForm" onsubmit="submitAddJob(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Company Name *</label>
+            <input type="text" class="form-input" name="company" required placeholder="e.g. SAP SE">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Role Title *</label>
+            <input type="text" class="form-input" name="role_title" required placeholder="e.g. Senior Java Engineer">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Country</label>
+            <input type="text" class="form-input" name="country" placeholder="e.g. Germany">
+          </div>
+          <div class="form-group">
+            <label class="form-label">City</label>
+            <input type="text" class="form-input" name="city" placeholder="e.g. Berlin">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Salary Min (EUR)</label>
+            <input type="number" class="form-input" name="salary_min" placeholder="e.g. 80000">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Salary Max (EUR)</label>
+            <input type="number" class="form-input" name="salary_max" placeholder="e.g. 110000">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Job URL</label>
+          <input type="url" class="form-input" name="apply_url" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Pipeline Stage</label>
+          <select class="form-select" name="stage">
+            <option value="Identified">Identified</option>
+            <option value="Applied">Applied</option>
+            <option value="Responded">Responded</option>
+            <option value="Interview">Interview</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" name="notes" placeholder="Any notes..."></textarea>
+        </div>
+        <div class="modal-footer" style="padding: 0; margin-top: 8px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="closeAddModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Add to Pipeline</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

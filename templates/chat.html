@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}AI Chat — Avantika SecretaryAI{% endblock %}
+{% block page_title %}AI Secretary{% endblock %}
+{% block page_subtitle %}Full-context AI assistant — ask anything about your job search, travel, or relocation{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-ghost btn-sm" id="clearChatBtn">↺ Clear</button>
+<a href="/whatsapp" class="btn btn-secondary btn-sm">📱 Open WhatsApp</a>
+{% endblock %}
+
+{% block content %}
+<div style="height:calc(100vh - var(--topbar-h) - 56px); display:flex; flex-direction:column; gap:0;">
+
+  <!-- QUICK PROMPTS BAR -->
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+    {% set quick = [
+      ('What follow-ups are due?', '◷'),
+      ('Draft follow-up for latest application', '✎'),
+      ('Find Java Lead jobs Germany visa sponsored', '▣'),
+      ('Cheapest flights BLR to FRA next month', '✈'),
+      ('Germany visa checklist status', '⊙'),
+      ('Salary negotiation advice for €95k offer', '€'),
+      ('Create Munich 3-day itinerary', '🗺'),
+      ('What is Opportunity Card next step?', '→'),
+    ] %}
+    {% for prompt, icon in quick %}
+    <button class="wa-cmd" onclick="sendPrompt('{{ prompt }}')">{{ icon }} {{ prompt[:30] }}{% if prompt|length > 30 %}...{% endif %}</button>
+    {% endfor %}
+  </div>
+
+  <!-- CHAT AREA -->
+  <div class="chat-container" style="flex:1; height:0;">
+    <div class="chat-messages" id="chatMessages">
+      {% if chat_messages %}
+        {% for msg in chat_messages %}
+        <div class="msg-row {{ msg.role }}">
+          <div class="msg-avatar">{{ '✦' if msg.role == 'assistant' else '◉' }}</div>
+          <div>
+            <div class="msg-bubble">{{ msg.content | replace('\n', '<br>') | safe }}</div>
+            {% if msg.time %}<div class="msg-time">{{ msg.time }}</div>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="msg-row assistant">
+        <div class="msg-avatar">✦</div>
+        <div>
+          <div class="msg-bubble">
+            Hello! I'm your AI Executive Secretary with full context about your profile, job pipeline, and travel plans.
+
+I can help you:
+• 🔍 Find jobs, draft applications, and coach salary negotiation
+• ✈ Plan trips, compare fares, and build itineraries
+• 📋 Track your German Opportunity Card and relocation tasks
+• ✎ Draft follow-up emails, cover letters, and recruiter messages
+• 💡 Give strategic career advice for the German/Dubai/Canada market
+
+What do you need today?
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="chat-input-area">
+      <textarea id="chatInput" class="chat-textarea" rows="1"
+        placeholder="Ask anything — job search, travel, salary, visa, Germany, follow-ups..."
+        style="font-size:14px;"></textarea>
+      <button class="chat-send-btn" id="sendBtn" onclick="sendChat()">➤</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+let sending = false;
+
+function sendPrompt(p) {
+  chatInput.value = p;
+  sendChat();
+}
+
+function sendChat() {
+  const msg = chatInput.value.trim();
+  if (!msg || sending) return;
+  sending = true;
+  sendBtn.disabled = true;
+  chatInput.value = '';
+  chatInput.style.height = 'auto';
+
+  appendMsg('user', msg);
+  showTyping();
+
+  fetch('/api/chat', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({message: msg})
+  })
+  .then(r => r.json())
+  .then(d => {
+    removeTyping();
+    appendMsg('assistant', d.reply);
+    sending = false;
+    sendBtn.disabled = false;
+    chatInput.focus();
+  })
+  .catch(() => {
+    removeTyping();
+    appendMsg('assistant', 'Sorry, something went wrong. Please try again.');
+    sending = false;
+    sendBtn.disabled = false;
+  });
+}
+
+function appendMsg(role, content) {
+  const div = document.createElement('div');
+  div.className = `msg-row ${role}`;
+  const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  div.innerHTML = `
+    <div class="msg-avatar">${role === 'assistant' ? '✦' : '◉'}</div>
+    <div>
+      <div class="msg-bubble">${content.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>
+      <div class="msg-time">${now}</div>
+    </div>
+  `;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function showTyping() {
+  const div = document.createElement('div');
+  div.className = 'msg-row assistant'; div.id = 'typing';
+  div.innerHTML = `<div class="msg-avatar">✦</div><div><div class="msg-bubble" style="padding:12px 16px;"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>`;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+function removeTyping() { const t = document.getElementById('typing'); if(t) t.remove(); }
+
+chatInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
+
+// Auto-resize textarea
+chatInput.addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+// Pre-fill from URL param
+const urlQ = new URLSearchParams(window.location.search).get('q');
+if (urlQ) { chatInput.value = urlQ; sendChat(); }
+
+// Clear button
+document.getElementById('clearChatBtn').addEventListener('click', function() {
+  fetch('/api/chat/reset', {method:'POST'}).then(r => r.json()).then(() => {
+    chatMessages.innerHTML = `
+      <div class="msg-row assistant">
+        <div class="msg-avatar">✦</div>
+        <div><div class="msg-bubble">Chat cleared. What do you need?</div></div>
+      </div>
+    `;
+  });
+});
+
+// Scroll to bottom
+chatMessages.scrollTop = chatMessages.scrollHeight;
+</script>
+{% endblock %}

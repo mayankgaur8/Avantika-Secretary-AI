@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Avantika SecretaryAI Logo</title>
+  <desc id="desc">Circular purple and orange logo for Avantika SecretaryAI with AI brain and headset icon.</desc>
+  <defs>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7d268f"/>
+      <stop offset="100%" stop-color="#5f1878"/>
+    </linearGradient>
+    <linearGradient id="leftBrain" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8d42b0"/>
+      <stop offset="100%" stop-color="#5f1f86"/>
+    </linearGradient>
+    <linearGradient id="rightBrain" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffbf26"/>
+      <stop offset="100%" stop-color="#f29019"/>
+    </linearGradient>
+    <path id="topArc" d="M 95 180 A 170 170 0 0 1 417 180" />
+    <path id="bottomArc" d="M 416 332 A 170 170 0 0 1 96 332" />
+  </defs>
+
+  <circle cx="256" cy="256" r="224" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="236" fill="none" stroke="#ff9815" stroke-width="10"/>
+  <circle cx="256" cy="256" r="212" fill="url(#ring)"/>
+  <circle cx="256" cy="256" r="173" fill="#ffffff" stroke="#ff9815" stroke-width="8"/>
+  <circle cx="256" cy="256" r="126" fill="#ffffff" stroke="#251642" stroke-width="8"/>
+
+  <path d="M179 213c0-37 29-66 64-66 10 0 19 2 28 6v175c-8 4-17 6-27 6-36 0-65-29-65-65 0-5 1-11 2-16-12-7-20-20-20-35 0-15 8-28 20-35-1-5-2-10-2-15z"
+        fill="url(#leftBrain)"/>
+  <path d="M333 213c0-37-29-66-64-66-10 0-19 2-28 6v175c8 4 17 6 27 6 36 0 65-29 65-65 0-5-1-11-2-16 12-7 20-20 20-35 0-15-8-28-20-35 1-5 2-10 2-15z"
+        fill="url(#rightBrain)"/>
+
+  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle cx="210" cy="188" r="5" fill="#ffffff"/>
+    <circle cx="189" cy="223" r="5" fill="#ffffff"/>
+    <circle cx="215" cy="258" r="5" fill="#ffffff"/>
+    <circle cx="228" cy="315" r="5" fill="#ffffff"/>
+    <circle cx="196" cy="288" r="5" fill="#ffffff"/>
+    <path d="M210 193v24l-16 10v25l21 14v19"/>
+    <path d="M189 228h22l16 15v21l15 12"/>
+    <path d="M196 293l20-11v-18l-13-10"/>
+    <path d="M228 320l18-10v-17l-15-11v-25"/>
+
+    <circle cx="302" cy="186" r="5" fill="#ffffff"/>
+    <circle cx="329" cy="223" r="5" fill="#ffffff"/>
+    <circle cx="298" cy="251" r="5" fill="#ffffff"/>
+    <circle cx="286" cy="314" r="5" fill="#ffffff"/>
+    <circle cx="319" cy="285" r="5" fill="#ffffff"/>
+    <path d="M302 191v26l18 11v24l-22 13v18"/>
+    <path d="M329 228h-22l-16 14v23l-15 11"/>
+    <path d="M319 290l-18-12v-16l12-10"/>
+    <path d="M286 319l-19-11v-17l16-13v-23"/>
+  </g>
+
+  <path d="M170 262c-10 0-18-8-18-18v-24c0-10 8-18 18-18h6v60z" fill="#251642"/>
+  <path d="M342 262c10 0 18-8 18-18v-24c0-10-8-18-18-18h-6v60z" fill="#251642"/>
+  <path d="M176 220c0-45 36-81 80-81s80 36 80 81" fill="none" stroke="#251642" stroke-width="10" stroke-linecap="round"/>
+  <path d="M301 338c0 9-8 17-17 17h-28c-9 0-17-8-17-17s8-17 17-17h28c9 0 17 8 17 17z" fill="#251642"/>
+  <path d="M300 338c11-2 20-8 27-17" fill="none" stroke="#251642" stroke-width="8" stroke-linecap="round"/>
+
+  <text font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#ffffff" letter-spacing="1">
+    <textPath href="#topArc" startOffset="50%" text-anchor="middle">Avantika</textPath>
+  </text>
+  <text font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#ffffff" letter-spacing="1">
+    <textPath href="#bottomArc" startOffset="50%" text-anchor="middle">SecretaryAI</textPath>
+  </text>
+</svg>

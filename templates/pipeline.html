@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Job Pipeline — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Job Pipeline{% endblock %}
+{% block page_subtitle %}Kanban view — drag cards or use the stage buttons to move applications{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-secondary btn-sm" onclick="openAddModal()">+ Add Job</button>
+<form method="post" action="/actions/import-targets" style="display:inline;">
+  <button class="btn btn-ghost btn-sm">↻ Import Targets</button>
+</form>
+<form method="post" action="/actions/sync-live-jobs" style="display:inline;">
+  <button class="btn btn-ghost btn-sm">⟳ Sync Live</button>
+</form>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Pipeline Stats -->
+<div class="stats-row" style="grid-template-columns:repeat(6,1fr); margin-bottom:20px;">
+  <div class="stat-card" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Total</div>
+    <div class="stat-value" style="font-size:22px;">{{ summary.total }}</div>
+  </div>
+  {% for stage in ['Applied','Responded','Interview','Offer'] %}
+  <div class="stat-card" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">{{ stage }}</div>
+    <div class="stat-value" style="font-size:22px;">{{ summary.by_stage.get(stage, 0) }}</div>
+  </div>
+  {% endfor %}
+  <div class="stat-card amber" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Follow-ups</div>
+    <div class="stat-value" style="font-size:22px;">{{ summary.follow_ups_due }}</div>
+  </div>
+</div>
+
+<!-- KANBAN BOARD -->
+<div class="kanban-board" id="kanbanBoard">
+  {% for col in board %}
+  <div class="kanban-col" data-stage="{{ col.stage }}">
+    <div class="kanban-col-header">
+      <div class="kanban-col-dot" style="background:{{ col.color }};"></div>
+      <div class="kanban-col-name">{{ col.stage }}</div>
+      <div class="kanban-col-count">{{ col.cards | length }}</div>
+    </div>
+    <div class="kanban-cards" id="col-{{ col.stage | lower | replace(' ', '-') }}">
+      {% if col.cards %}
+        {% for job in col.cards %}
+        <div class="kanban-card" id="job-{{ job.id }}"
+             onclick="openJobModal({{ job.id }}, '{{ job.company | replace("'","") }}', '{{ job.role_title | replace("'","") }}')">
+          {% if job.match_score and job.match_score > 0 %}
+          <div class="kanban-card-score">{{ (job.match_score * 100) | int }}%</div>
+          {% endif %}
+          <div class="kanban-card-company">{{ job.company }}</div>
+          <div class="kanban-card-role">{{ job.role_title }}</div>
+          <div class="kanban-card-meta">
+            {% if job.country or job.city %}
+            <span class="tag">📍 {{ job.city or job.country }}</span>
+            {% endif %}
+            {% if job.salary_max %}
+            <span class="tag green">€{{ '{:,.0f}'.format(job.salary_max) }}</span>
+            {% endif %}
+            {% if job.visa_support and job.visa_support != 'Unknown' %}
+            <span class="tag accent">Visa: {{ job.visa_support }}</span>
+            {% endif %}
+          </div>
+          {% if job.next_action_due %}
+          <div style="margin-top:8px; font-size:11px; color:var(--amber);">⏰ {{ job.next_action or 'Follow-up' }} by {{ job.next_action_due }}</div>
+          {% endif %}
+          <div class="kanban-card-actions" onclick="event.stopPropagation()">
+            {% set stages = ['Identified','Applied','Responded','Interview','Offer','Rejected'] %}
+            {% set curr_idx = stages.index(col.stage) if col.stage in stages else 0 %}
+            {% if curr_idx < stages|length - 1 %}
+            <button class="btn btn-primary btn-sm" style="flex:1;"
+              onclick="moveStage({{ job.id }}, '{{ stages[curr_idx + 1] }}')">
+              → {{ stages[curr_idx + 1] }}
+            </button>
+            {% endif %}
+            {% if curr_idx > 0 %}
+            <button class="btn btn-ghost btn-sm btn-icon"
+              onclick="moveStage({{ job.id }}, '{{ stages[curr_idx - 1] }}')">←</button>
+            {% endif %}
+            <button class="btn btn-ghost btn-sm btn-icon"
+              onclick="archiveJob({{ job.id }})">✕</button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+      <div style="padding:20px; text-align:center; font-size:12px; color:var(--text-muted); border:1px dashed var(--border); border-radius:8px; margin:4px;">
+        No jobs here
+      </div>
+      {% endif %}
+    </div>
+    <button class="kanban-add-btn" onclick="openAddModalWithStage('{{ col.stage }}')">
+      + Add to {{ col.stage }}
+    </button>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- DRAFT PACK SECTION -->
+<div style="margin-top:28px;">
+  <div class="section-header">
+    <div>
+      <div class="section-title">Application Drafts</div>
+      <div class="section-subtitle">AI-generated cover letters, recruiter messages, and tailored summaries</div>
+    </div>
+    <div class="section-actions">
+      <a href="/chat" class="btn btn-primary btn-sm">Generate Draft Pack</a>
+    </div>
+  </div>
+
+  {% if draft_pack %}
+  <div class="card">
+    <div class="card-header">
+      <span>✎</span>
+      <span class="card-title">Draft Pack — {{ draft_pack.job.company }} / {{ draft_pack.job.role_title }}</span>
+      <span class="tag green">Ready</span>
+    </div>
+    <div class="card-body">
+      <div class="grid-2" style="gap:16px;">
+        <div>
+          <div class="form-label" style="margin-bottom:8px;">Recruiter Message</div>
+          <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:14px; font-size:13px; white-space:pre-wrap; color:var(--text-secondary); max-height:200px; overflow-y:auto;">{{ draft_pack.draft.recruiter_message }}</div>
+        </div>
+        <div>
+          <div class="form-label" style="margin-bottom:8px;">Tailored Summary</div>
+          <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:14px; font-size:13px; white-space:pre-wrap; color:var(--text-secondary); max-height:200px; overflow-y:auto;">{{ draft_pack.draft.tailored_summary }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="empty-state">
+      <div class="empty-state-icon">✎</div>
+      <div class="empty-state-title">No drafts yet</div>
+      <div class="empty-state-desc">Click "Generate Draft Pack" on any job card to create a cover letter, recruiter message, and tailored summary.</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function moveStage(jobId, newStage) {
+  fetch(`/api/pipeline/${jobId}/stage`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({stage: newStage})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { alert(d.error); return; }
+    // Reload the page to show updated board
+    window.location.reload();
+  });
+}
+
+function archiveJob(jobId) {
+  if (!confirm('Archive this job?')) return;
+  moveStage(jobId, 'Archived');
+}
+
+function openAddModalWithStage(stage) {
+  openAddModal();
+  setTimeout(() => {
+    const sel = document.querySelector('#addJobForm select[name="stage"]');
+    if (sel) sel.value = stage;
+  }, 100);
+}
+
+function generateDraftPack(jobId) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  fetch(`/api/jobs/${jobId}/draft-pack`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => { window.location.href = `/pipeline?draft_job_id=${jobId}`; });
+}
+</script>
+{% endblock %}

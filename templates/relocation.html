@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Relocation Hub — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Relocation Hub{% endblock %}
+{% block page_subtitle %}Visa tracking, checklists, housing research, and relocation planning{% endblock %}
+
+{% block topbar_actions %}
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- RELOCATION OVERVIEW STATS -->
+<div class="stats-row" style="grid-template-columns:repeat(4,1fr);">
+  {% if visas %}
+  <div class="stat-card accent">
+    <div class="stat-label">Visa Applications</div>
+    <div class="stat-value">{{ visas | length }}</div>
+    <div class="stat-sub">{{ visas | selectattr('application_status', 'equalto', 'approved') | list | length }} approved</div>
+    <div class="stat-icon">⊙</div>
+  </div>
+  {% endif %}
+  <div class="stat-card green">
+    <div class="stat-label">Checklist Done</div>
+    {% set total_items = namespace(n=0) %}
+    {% set done_items = namespace(n=0) %}
+    {% for v in visas %}
+      {% set total_items.n = total_items.n + v.checklist|length %}
+      {% set done_items.n = done_items.n + v.checklist|selectattr('completed')|list|length %}
+    {% endfor %}
+    <div class="stat-value">{{ done_items.n }}</div>
+    <div class="stat-sub">/ {{ total_items.n }} total tasks</div>
+    <div class="stat-icon">✓</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">Target Countries</div>
+    <div class="stat-value">{{ target_countries | length }}</div>
+    <div class="stat-sub">{{ target_countries | join(', ') }}</div>
+    <div class="stat-icon">✈</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">Job Profile</div>
+    <div class="stat-value" style="font-size:15px; padding-top:4px;">{{ job_profile.current_role or 'Not set' }}</div>
+    <div class="stat-sub">{{ job_profile.years_experience or '?' }} years experience</div>
+    <div class="stat-icon">◎</div>
+  </div>
+</div>
+
+<!-- THREE COLUMN LAYOUT -->
+<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; align-items:start;">
+
+  <!-- VISA TRACKER -->
+  <div style="grid-column:1/3;">
+    <div class="section-header" style="margin-bottom:16px;">
+      <div><div class="section-title">Visa Tracker</div></div>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('addVisaModal').classList.add('open')">+ Add Visa</button>
+    </div>
+
+    {% if visas %}
+    {% for visa in visas %}
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <div style="width:36px;height:36px;background:var(--accent-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">⊙</div>
+        <div style="flex:1;">
+          <div style="font-weight:700; font-size:14px;">{{ visa.visa_type }}</div>
+          <div style="font-size:12px; color:var(--text-muted);">{{ visa.target_country }}</div>
+        </div>
+        <span class="status-badge {{ visa.application_status | lower }}">{{ visa.application_status | title }}</span>
+        <select class="form-select" style="width:140px; font-size:12px;" onchange="updateVisaStatus({{ visa.id }}, this.value)">
+          {% for s in ['preparing','submitted','in_review','approved','rejected'] %}
+          <option value="{{ s }}" {{ 'selected' if s == visa.application_status else '' }}>{{ s | title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="card-body">
+        {% if visa.notes %}
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:14px; padding:10px; background:var(--bg-input); border-radius:8px;">{{ visa.notes }}</div>
+        {% endif %}
+
+        {% if visa.progress %}
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px;">
+          <span style="color:var(--text-secondary);">Checklist Progress</span>
+          <span style="font-weight:700; color:var(--text-primary);">{{ visa.progress.done }}/{{ visa.progress.total }} ({{ visa.progress.percent }}%)</span>
+        </div>
+        <div class="progress-bar" style="margin-bottom:16px;">
+          <div class="progress-fill {{ 'green' if visa.progress.percent > 70 else 'amber' if visa.progress.percent > 40 else 'red' }}"
+               style="width:{{ visa.progress.percent }}%;"></div>
+        </div>
+        {% endif %}
+
+        {% if visa.checklist %}
+        <div style="columns:2; column-gap:20px;">
+          {% for item in visa.checklist %}
+          <div class="checklist-item {{ 'done' if item.completed else '' }}"
+               onclick="toggleCheck({{ item.id }}, this)"
+               style="break-inside:avoid;">
+            <div class="check-box">{{ '✓' if item.completed else '' }}</div>
+            <div class="check-label">{{ item.item }}</div>
+            {% if item.due_date and not item.completed %}<div class="check-due">{{ item.due_date }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-state-icon">⊙</div>
+        <div class="empty-state-title">No visa applications tracked</div>
+        <div class="empty-state-desc">Add your visa applications to track progress and checklist completion.</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- RIGHT: JOB PROFILE + RELOCATION TIPS -->
+  <div style="display:flex; flex-direction:column; gap:16px;">
+
+    <!-- JOB PROFILE -->
+    <div class="card">
+      <div class="card-header">
+        <span>◉</span>
+        <span class="card-title">Job Profile</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('editProfileSection').classList.toggle('hidden')">Edit</button>
+      </div>
+      <div class="card-body" style="padding:14px 16px;">
+        {% if job_profile %}
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div>
+            <div class="form-label" style="margin-bottom:2px;">Current</div>
+            <div style="font-size:13px; font-weight:600;">{{ job_profile.current_role or '—' }}</div>
+            {% if job_profile.years_experience %}<div style="font-size:12px; color:var(--text-muted);">{{ job_profile.years_experience }} years exp</div>{% endif %}
+          </div>
+          <div class="divider"></div>
+          <div>
+            <div class="form-label" style="margin-bottom:2px;">Target Roles</div>
+            <div style="font-size:12px; color:var(--text-secondary);">{{ job_profile.target_roles or '—' }}</div>
+          </div>
+          <div>
+            <div class="form-label" style="margin-bottom:2px;">Target Countries</div>
+            <div style="display:flex; gap:5px; flex-wrap:wrap;">
+              {% if job_profile.target_countries %}
+              {% for c in job_profile.target_countries.split(',') %}
+              <span class="tag accent">{{ c.strip() }}</span>
+              {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="form-label" style="margin-bottom:2px;">Salary Target</div>
+            <div style="font-size:13px; font-weight:600; color:var(--green);">
+              {% if job_profile.target_salary_min %}€{{ '{:,.0f}'.format(job_profile.target_salary_min) }} – €{{ '{:,.0f}'.format(job_profile.target_salary_max) }}{% else %}—{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="form-label" style="margin-bottom:2px;">Readiness</div>
+            <div class="tag {{ 'green' if job_profile.relocation_readiness == 'immediate' else 'amber' }}">
+              {{ (job_profile.relocation_readiness or 'Unknown') | replace('_', ' ') | title }}
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-muted text-sm">Profile not set. Go to Settings to configure.</div>
+        {% endif %}
+
+        <!-- Edit form -->
+        <div id="editProfileSection" class="hidden" style="margin-top:14px; border-top:1px solid var(--border); padding-top:14px;">
+          <form method="post" action="/api/profile/job">
+            <div class="form-group">
+              <label class="form-label">Current Role</label>
+              <input type="text" class="form-input" name="current_role" value="{{ job_profile.current_role or '' }}" placeholder="Java Lead">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Salary Min (EUR)</label>
+              <input type="number" class="form-input" name="target_salary_min" value="{{ job_profile.target_salary_min or '' }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Relocation Readiness</label>
+              <select class="form-select" name="relocation_readiness">
+                <option value="immediate" {{ 'selected' if job_profile.relocation_readiness == 'immediate' else '' }}>Immediate</option>
+                <option value="3months" {{ 'selected' if job_profile.relocation_readiness == '3months' else '' }}>3 Months</option>
+                <option value="6months" {{ 'selected' if job_profile.relocation_readiness == '6months' else '' }}>6 Months</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm w-full">Save Profile</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- QUICK TIPS -->
+    <div class="card">
+      <div class="card-header"><span>💡</span><span class="card-title">Relocation Checklist</span></div>
+      <div class="card-body" style="padding:14px;">
+        {% set tips = [
+          ('On Arrival: Register address (Anmeldung) within 2 weeks', 'amber', False),
+          ('Open German bank account (N26 or DKB)', 'blue', False),
+          ('Get public health insurance (AOK, TK)', 'green', False),
+          ('Register for Tax ID (auto-sent by mail)', 'accent', False),
+          ('Get SEPA direct debit set up for rent', 'cyan', False),
+          ('Get German SIM card on arrival', 'green', True),
+          ('Join relevant LinkedIn groups for Germany', 'accent', True),
+        ] %}
+        {% for tip, color, done in tips %}
+        <div style="display:flex; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); align-items:flex-start;">
+          <span class="tag {{ color }}" style="flex-shrink:0; margin-top:1px;">{{ '✓' if done else '○' }}</span>
+          <span style="font-size:12px; color:{{ 'var(--text-muted)' if done else 'var(--text-secondary)' }}; {{ 'text-decoration:line-through;' if done else '' }}">{{ tip }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- SALARY BENCHMARK -->
+    <div class="card">
+      <div class="card-header"><span>€</span><span class="card-title">Germany Salary Benchmarks</span></div>
+      <div class="card-body" style="padding:14px;">
+        {% set roles = [
+          ('Java Lead / Principal', '€90,000–€120,000'),
+          ('Engineering Manager', '€100,000–€140,000'),
+          ('Senior Java Engineer', '€75,000–€100,000'),
+          ('Software Architect', '€95,000–€130,000'),
+        ] %}
+        {% for role, range in roles %}
+        <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px;">
+          <span style="color:var(--text-secondary);">{{ role }}</span>
+          <span style="font-weight:600; color:var(--green);">{{ range }}</span>
+        </div>
+        {% endfor %}
+        <div style="margin-top:10px; font-size:11px; color:var(--text-muted);">Based on Berlin/Munich/Frankfurt market. Source: Glassdoor/LinkedIn 2025.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ADD VISA MODAL -->
+<div class="modal-overlay" id="addVisaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title">Add Visa Application</div><div class="modal-subtitle">Track a new visa or permit</div></div>
+      <button class="modal-close" onclick="document.getElementById('addVisaModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form method="post" action="/api/visa">
+        <div class="form-group">
+          <label class="form-label">Visa Type</label>
+          <select class="form-select" name="visa_type">
+            <option>German Opportunity Card (Chancenkarte)</option>
+            <option>German Blue Card (EU Blue Card)</option>
+            <option>Dubai Work Visa</option>
+            <option>Canada Express Entry</option>
+            <option>Ireland Critical Skills Visa</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Target Country</label>
+          <input type="text" class="form-input" name="target_country" placeholder="Germany">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-select" name="application_status">
+            <option value="preparing">Preparing</option>
+            <option value="submitted">Submitted</option>
+            <option value="in_review">In Review</option>
+            <option value="approved">Approved</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" name="notes" placeholder="Any notes about this application..."></textarea>
+        </div>
+        <div class="modal-footer" style="padding:0; margin-top:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('addVisaModal').classList.remove('open')">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Add Visa</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleCheck(id, el) {
+  fetch(`/api/visa/checklist/${id}/toggle`, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      el.classList.toggle('done', d.completed == 1);
+      el.querySelector('.check-box').textContent = d.completed ? '✓' : '';
+    });
+}
+
+function updateVisaStatus(id, status) {
+  fetch(`/api/visa/${id}/status`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({status})
+  }).then(r => r.json());
+}
+</script>
+{% endblock %}

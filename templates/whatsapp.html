@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp — Avantika SecretaryAI{% endblock %}
+{% block page_title %}WhatsApp Assistant{% endblock %}
+{% block page_subtitle %}Real-time AI secretary over WhatsApp{% endblock %}
+
+{% block content %}
+
+<div class="wa-container">
+  <!-- THREAD LIST -->
+  <div class="wa-sidebar">
+    <div class="wa-sidebar-header">
+      <div style="font-weight:700; font-size:14px; flex:1;">Conversations</div>
+      <span class="wa-status-dot"></span>
+      <span style="font-size:11px; color:#25d366;">Live</span>
+    </div>
+    <div class="wa-thread-list">
+      {% for sender, thread in threads.items() %}
+      <div class="wa-thread-item {% if loop.first %}active{% endif %}"
+           onclick="selectThread('{{ sender }}')" id="thread-{{ sender | replace('+','') | replace(':','') }}">
+        <div class="wa-thread-avatar">📱</div>
+        <div class="wa-thread-info">
+          <div class="wa-thread-name">{{ thread.profile_name or sender }}</div>
+          <div class="wa-thread-preview">{{ thread.messages[-1].message_text[:40] if thread.messages else 'No messages' }}</div>
+        </div>
+        <div class="wa-thread-time">{{ thread.messages[-1].created_at[11:16] if thread.messages else '' }}</div>
+      </div>
+      {% else %}
+      <!-- Demo/Admin thread always visible -->
+      <div class="wa-thread-item active" onclick="selectThread('demo')">
+        <div class="wa-thread-avatar">📱</div>
+        <div class="wa-thread-info">
+          <div class="wa-thread-name">My WhatsApp</div>
+          <div class="wa-thread-preview">Simulate a conversation</div>
+        </div>
+        <div class="wa-thread-time">now</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- WHATSAPP SETUP INFO -->
+    <div style="padding:12px; border-top:1px solid var(--border); background:var(--bg-base);">
+      <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">WhatsApp Setup</div>
+      <div style="font-size:11px; color:var(--text-secondary); line-height:1.6;">
+        {% if wa_phone %}
+        <div style="color:var(--green); font-weight:600;">✓ Connected: {{ wa_phone }}</div>
+        {% else %}
+        <div>1. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env</div>
+        <div>2. Point Twilio webhook to: <code style="background:var(--bg-input);padding:1px 4px;border-radius:3px;">/whatsapp/webhook</code></div>
+        <div>3. Send "join [sandbox]" to activate</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAT AREA -->
+  <div class="wa-chat" id="waChatArea">
+    <div class="wa-chat-header">
+      <div class="wa-thread-avatar" style="width:36px;height:36px;">📱</div>
+      <div style="flex:1;">
+        <div style="font-weight:600; font-size:13px;" id="waChatName">My WhatsApp</div>
+        <div style="font-size:11px; display:flex; align-items:center; gap:5px; color:var(--green);">
+          <span class="wa-status-dot"></span> Online
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted); display:flex; gap:8px; align-items:center;">
+        <span>AI Secretary Active</span>
+        <span class="tag green">Pro</span>
+      </div>
+    </div>
+
+    <!-- COMMAND SHORTCUTS -->
+    <div class="wa-commands">
+      <span style="font-size:10px; color:var(--text-muted); margin-right:2px;">Quick:</span>
+      {% for cmd in ['pipeline', 'trips', 'alerts', 'visa status', 'remind me', 'help', 'menu'] %}
+      <button class="wa-cmd" onclick="sendWACommand('{{ cmd }}')">{{ cmd }}</button>
+      {% endfor %}
+    </div>
+
+    <div class="wa-messages" id="waMessages">
+      {% if messages %}
+        {% for msg in messages %}
+        <div class="wa-msg {{ msg.direction }}">
+          {{ msg.message_text }}
+          <div class="wa-msg-time">{{ msg.created_at[11:16] if msg.created_at else '' }}</div>
+        </div>
+        {% endfor %}
+      {% else %}
+      <!-- Welcome message -->
+      <div class="wa-msg inbound">
+        👋 Welcome to *SecretaryAI* — your AI Executive Secretary!
+
+I'm here to help with:
+• 🔍 Job search & applications
+• ✈ Travel planning & fare alerts
+• 📋 Visa & relocation tracking
+• 💬 Salary negotiation coaching
+
+Type *menu* for all commands or just ask me anything!
+        <div class="wa-msg-time">now</div>
+      </div>
+      <div class="wa-msg outbound">
+        Hi! I'm looking for Java Lead jobs in Germany 🇩🇪
+        <div class="wa-msg-time">now</div>
+      </div>
+      <div class="wa-msg inbound">
+Great! Based on your profile (17yr exp, Java Lead), here are your top matches:
+
+1. *SAP SE* — Java Principal, Walldorf — €90-120k
+2. *Zalando* — Java Lead, Berlin — €95-115k
+3. *Siemens* — Senior Java Eng, Munich — €85-110k
+
+All 3 offer visa sponsorship ✅
+
+Reply *1*, *2*, or *3* to add to pipeline, or type *apply SAP* to start a draft.
+        <div class="wa-msg-time">now</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="wa-input-area">
+      <textarea class="wa-input" id="waInput" rows="1"
+        placeholder="Message your AI Secretary..."
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendWAMessage();}"></textarea>
+      <button class="wa-send" onclick="sendWAMessage()">➤</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- WHATSAPP GUIDE SECTION -->
+<div style="margin-top:24px;">
+  <div class="section-header">
+    <div>
+      <div class="section-title">Command Reference</div>
+      <div class="section-subtitle">All commands available in your WhatsApp assistant</div>
+    </div>
+  </div>
+  <div class="grid-3" style="gap:14px;">
+    {% set cmds = [
+      ('Job Search', 'accent', [
+        ('pipeline', 'View your full job pipeline'),
+        ('apply SAP', 'Add SAP to Applied stage'),
+        ('follow up Zalando', 'Draft follow-up for Zalando'),
+        ('interview prep Siemens', 'Get Siemens interview guide'),
+        ('salary Germany Java', 'Get salary benchmarks'),
+      ]),
+      ('Travel', 'blue', [
+        ('trips', 'View all upcoming trips'),
+        ('flights BLR FRA May', 'Find flights BLR→FRA in May'),
+        ('watch BLR DXB 30000', 'Set price alert under ₹30,000'),
+        ('alerts', 'View active price alerts'),
+        ('itinerary', 'Get your next trip itinerary'),
+      ]),
+      ('Relocation & Admin', 'green', [
+        ('visa status', 'Check visa tracker'),
+        ('remind me X on DATE', 'Set a custom reminder'),
+        ('menu', 'See all available commands'),
+        ('help', 'Get help and guidance'),
+        ('stop', 'Pause all notifications'),
+      ]),
+    ] %}
+    {% for title, color, items in cmds %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title" style="color:var(--{{ color }});">{{ title }}</span>
+      </div>
+      <div class="card-body" style="padding:12px 16px;">
+        {% for cmd, desc in items %}
+        <div style="display:flex; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); cursor:pointer;" onclick="sendWACommand('{{ cmd }}')">
+          <code style="background:var(--bg-input); padding:2px 7px; border-radius:4px; font-size:11px; color:var(--accent-light); flex-shrink:0;">{{ cmd }}</code>
+          <span style="font-size:12px; color:var(--text-secondary);">{{ desc }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentSender = 'demo';
+
+function selectThread(sender) {
+  currentSender = sender;
+  document.querySelectorAll('.wa-thread-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('thread-' + sender.replace(/[+:]/g,'')).classList.add('active');
+  // In real app: load messages for this sender
+}
+
+function sendWACommand(cmd) {
+  document.getElementById('waInput').value = cmd;
+  sendWAMessage();
+}
+
+function sendWAMessage() {
+  const input = document.getElementById('waInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  appendWAMsg('outbound', msg);
+
+  // Send to the AI chat endpoint (simulates WhatsApp conversation)
+  fetch('/api/chat', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({message: msg})
+  })
+  .then(r => r.json())
+  .then(d => {
+    appendWAMsg('inbound', d.reply);
+  });
+}
+
+function appendWAMsg(direction, text) {
+  const container = document.getElementById('waMessages');
+  const now = new Date().toTimeString().slice(0,5);
+  const div = document.createElement('div');
+  div.className = `wa-msg ${direction}`;
+  div.innerHTML = text.replace(/\n/g,'<br>') + `<div class="wa-msg-time">${now}</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+// Auto-scroll to bottom on load
+document.getElementById('waMessages').scrollTop = 99999;
+</script>
+{% endblock %}

@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Executive Dashboard{% endblock %}
+{% block page_subtitle %}Good {{ time_greeting }}, {{ user.name if user else 'Mayank' }}. Here's your status.{% endblock %}
+
+{% block topbar_actions %}
+<a href="#" class="btn btn-secondary btn-sm" onclick="openAddModal(); return false;">+ Add Job</a>
+<a href="/travel" class="btn btn-secondary btn-sm">+ New Trip</a>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- STAT CARDS -->
+<div class="stats-row">
+  <div class="stat-card accent">
+    <div class="stat-label">Active Applications</div>
+    <div class="stat-value">{{ pipeline.active }}</div>
+    <div class="stat-sub">{{ pipeline.total }} total tracked</div>
+    <div class="stat-icon">▣</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">Follow-ups Due</div>
+    <div class="stat-value">{{ pipeline.follow_ups_due }}</div>
+    <div class="stat-sub">Action needed this week</div>
+    <div class="stat-icon">◷</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Interviews</div>
+    <div class="stat-value">{{ pipeline.interviews }}</div>
+    <div class="stat-sub">{{ pipeline.offers }} offers received</div>
+    <div class="stat-icon">◎</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">Active Trips</div>
+    <div class="stat-value">{{ travel_count }}</div>
+    <div class="stat-sub">{{ price_watches }} price watches active</div>
+    <div class="stat-icon">✈</div>
+  </div>
+  <div class="stat-card cyan">
+    <div class="stat-label">Companies Watched</div>
+    <div class="stat-value">{{ company_count }}</div>
+    <div class="stat-sub">Monitoring for openings</div>
+    <div class="stat-icon">⬡</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Visa Status</div>
+    <div class="stat-value" style="font-size:16px; padding-top:6px;">
+      {% if visa_active %}
+        <span class="status-badge {{ visa_active.application_status | lower }}">{{ visa_active.application_status | title }}</span>
+      {% else %}
+        <span class="text-muted" style="font-size:14px;">None</span>
+      {% endif %}
+    </div>
+    <div class="stat-sub">{% if visa_active %}{{ visa_active.target_country }}{% else %}Add via Relocation Hub{% endif %}</div>
+    <div class="stat-icon">⊙</div>
+  </div>
+</div>
+
+<!-- MAIN TWO COLUMN -->
+<div style="display:grid; grid-template-columns:1fr 380px; gap:20px; align-items:start;">
+
+  <!-- LEFT COLUMN -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <!-- PIPELINE SNAPSHOT -->
+    <div class="card">
+      <div class="card-header">
+        <span class="nav-icon">▣</span>
+        <span class="card-title">Pipeline Snapshot</span>
+        <a href="/pipeline" class="btn btn-ghost btn-sm">Full Kanban →</a>
+      </div>
+      {% if recent_jobs %}
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr><th>Company</th><th>Role</th><th>Stage</th><th>Next Due</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for job in recent_jobs[:8] %}
+            <tr>
+              <td>
+                <div style="font-weight:600;">{{ job.company }}</div>
+                <div style="font-size:11px; color:var(--text-muted);">{{ job.city or job.country or '' }}</div>
+              </td>
+              <td style="font-size:12px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ job.role_title }}</td>
+              <td>
+                <span class="status-badge {{ (job.pipeline_stage or 'identified') | lower }}">
+                  {{ job.pipeline_stage or 'Identified' }}
+                </span>
+              </td>
+              <td style="font-size:12px;">
+                {% if job.next_action_due %}<span class="text-amber">{{ job.next_action_due }}</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td>
+                <button class="btn btn-ghost btn-sm" onclick="openJobModal({{ job.id }}, '{{ job.company|replace("'","") }}', '{{ job.role_title|replace("'","") }}')">›</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-icon">▣</div>
+        <div class="empty-state-title">No jobs in pipeline yet</div>
+        <div class="empty-state-desc">Click "+ Add Job" to start tracking companies.</div>
+        <button class="btn btn-primary btn-sm mt-3" onclick="openAddModal()">+ Add First Job</button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- AI CHAT -->
+    <div class="card">
+      <div class="card-header">
+        <span class="nav-icon" style="color:var(--accent-light);">✦</span>
+        <span class="card-title">AI Secretary</span>
+        <button class="btn btn-ghost btn-sm" id="clearChatBtn">Clear</button>
+        <a href="/chat" class="btn btn-ghost btn-sm">Expand →</a>
+      </div>
+      <div style="height:340px; display:flex; flex-direction:column; overflow:hidden;">
+        <div class="chat-messages" id="chatMessages" style="padding:16px; flex:1; overflow-y:auto;">
+          {% if chat_messages %}
+            {% for msg in chat_messages %}
+            <div class="msg-row {{ msg.role }}">
+              <div class="msg-avatar">{{ '✦' if msg.role == 'assistant' else '◉' }}</div>
+              <div><div class="msg-bubble">{{ msg.content }}</div></div>
+            </div>
+            {% endfor %}
+          {% else %}
+          <div class="msg-row assistant">
+            <div class="msg-avatar">✦</div>
+            <div><div class="msg-bubble">Hello! I'm your AI Secretary. Ask me anything about your job search, travel plans, salary negotiation, or German relocation. What do you need?</div></div>
+          </div>
+          {% endif %}
+        </div>
+        <div style="padding:6px 14px 8px; display:flex; gap:6px; flex-wrap:wrap; border-top:1px solid var(--border);">
+          <button class="wa-cmd" onclick="sendQuickPrompt('What follow-ups are due this week?')">Follow-ups due</button>
+          <button class="wa-cmd" onclick="sendQuickPrompt('Draft a follow-up email for my latest application')">Draft follow-up</button>
+          <button class="wa-cmd" onclick="sendQuickPrompt('What is my Germany relocation checklist status?')">Visa status</button>
+          <button class="wa-cmd" onclick="sendQuickPrompt('Find Java Lead jobs in Germany with visa sponsorship')">Find jobs</button>
+        </div>
+        <div class="chat-input-area" style="padding:10px 14px;">
+          <textarea id="dashChatInput" class="chat-textarea" rows="1" placeholder="Ask your AI Secretary anything..."></textarea>
+          <button class="chat-send-btn" onclick="sendDashChat()">➤</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div style="display:flex; flex-direction:column; gap:16px;">
+
+    <!-- FOLLOW-UPS -->
+    {% if follow_ups %}
+    <div class="card">
+      <div class="card-header">
+        <span style="color:var(--amber);">◷</span>
+        <span class="card-title">Follow-ups Due</span>
+        <span class="nav-badge amber">{{ follow_ups | length }}</span>
+      </div>
+      <div style="padding:0;">
+        {% for job in follow_ups[:4] %}
+        <div style="padding:11px 16px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ job.company }}</div>
+            <div style="font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ job.role_title }}</div>
+          </div>
+          <div style="text-align:right; flex-shrink:0;">
+            <div style="font-size:11px; color:var(--amber); font-weight:600;">{{ job.next_action_due or 'Now' }}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="sendQuickPrompt('Draft a follow-up email for {{ job.company }} application for {{ job.role_title }}')">Draft</button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ACTIVE TRIPS -->
+    {% if travel_requests %}
+    <div class="card">
+      <div class="card-header">
+        <span>✈</span>
+        <span class="card-title">Active Travel</span>
+        <a href="/travel" class="btn btn-ghost btn-sm">All →</a>
+      </div>
+      <div style="padding:0;">
+        {% for trip in travel_requests[:3] %}
+        <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:center;">
+          <div style="width:36px; height:36px; background:var(--blue-dim); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;">✈</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13px;">{{ trip.origin }} → {{ trip.destination }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ trip.depart_date or 'No date' }}</div>
+          </div>
+          <span class="status-badge {{ (trip.status or 'planning') | lower }}">{{ (trip.status or 'planning') | title }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- VISA TRACKER -->
+    {% if visa_active %}
+    <div class="card">
+      <div class="card-header">
+        <span>⊙</span>
+        <span class="card-title">Visa & Relocation</span>
+        <a href="/relocation" class="btn btn-ghost btn-sm">Manage →</a>
+      </div>
+      <div class="card-body">
+        <div style="font-weight:700; font-size:13px; margin-bottom:4px;">{{ visa_active.visa_type }}</div>
+        <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">{{ visa_active.target_country }}</div>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <span class="status-badge {{ visa_active.application_status | lower }}">{{ visa_active.application_status | title }}</span>
+        </div>
+        {% if visa_active.progress %}
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;">
+          Checklist {{ visa_active.progress.done }}/{{ visa_active.progress.total }} complete
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill green" style="width:{{ visa_active.progress.percent }}%;"></div>
+        </div>
+        {% endif %}
+        {% if visa_active.checklist %}
+        <div style="margin-top:14px;">
+          {% for item in visa_active.checklist[:4] %}
+          <div class="checklist-item {{ 'done' if item.completed else '' }}" onclick="toggleCheck({{ item.id }}, this)">
+            <div class="check-box">{{ '✓' if item.completed else '' }}</div>
+            <div class="check-label">{{ item.item }}</div>
+            {% if item.due_date and not item.completed %}<div class="check-due">{{ item.due_date }}</div>{% endif %}
+          </div>
+          {% endfor %}
+          {% if visa_active.checklist | length > 4 %}
+          <div style="padding:8px 0; font-size:12px; color:var(--text-muted);">
+            +{{ visa_active.checklist | length - 4 }} more — <a href="/relocation" style="color:var(--accent-light);">view all</a>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- RECENT ACTIVITY -->
+    <div class="card">
+      <div class="card-header">
+        <span>⚙</span>
+        <span class="card-title">Automation Log</span>
+      </div>
+      <div style="padding:0;">
+        {% if automation_runs %}
+          {% for run in automation_runs[:5] %}
+          <div style="padding:9px 16px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center;">
+            <span class="status-badge {{ 'applied' if run.status == 'success' else 'rejected' if run.status == 'failed' else 'planning' }}">{{ run.status }}</span>
+            <div style="flex:1; font-size:12px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ run.run_type | replace('_', ' ') | title }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ (run.created_at or '')[:10] }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+        <div style="padding:20px 16px; text-align:center; font-size:12px; color:var(--text-muted);">No automation runs yet</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function sendDashChat() {
+  const input = document.getElementById('dashChatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  appendMsg('user', msg);
+  showTyping();
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: msg})
+  })
+  .then(r => r.json())
+  .then(d => {
+    removeTyping();
+    appendMsg('assistant', d.reply);
+    scrollChat();
+  });
+}
+function sendQuickPrompt(p) {
+  document.getElementById('dashChatInput').value = p;
+  sendDashChat();
+}
+function appendMsg(role, content) {
+  const c = document.getElementById('chatMessages');
+  const d = document.createElement('div');
+  d.className = `msg-row ${role}`;
+  d.innerHTML = `<div class="msg-avatar">${role==='assistant'?'✦':'◉'}</div><div><div class="msg-bubble">${content.replace(/\n/g,'<br>')}</div></div>`;
+  c.appendChild(d);
+  scrollChat();
+}
+function showTyping() {
+  const c = document.getElementById('chatMessages');
+  const d = document.createElement('div');
+  d.className = 'msg-row assistant'; d.id = 'typingIndicator';
+  d.innerHTML = `<div class="msg-avatar">✦</div><div><div class="msg-bubble" style="padding:12px 16px;"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>`;
+  c.appendChild(d);
+  scrollChat();
+}
+function removeTyping() { const t = document.getElementById('typingIndicator'); if(t) t.remove(); }
+function scrollChat() { const c = document.getElementById('chatMessages'); c.scrollTop = c.scrollHeight; }
+document.getElementById('dashChatInput').addEventListener('keydown', function(e) {
+  if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendDashChat(); }
+});
+document.getElementById('clearChatBtn').addEventListener('click', function() {
+  fetch('/api/chat/reset', {method:'POST'}).then(r=>r.json()).then(d=>{
+    document.getElementById('chatMessages').innerHTML = `<div class="msg-row assistant"><div class="msg-avatar">✦</div><div><div class="msg-bubble">Chat cleared. What do you need?</div></div></div>`;
+  });
+});
+function toggleCheck(id, el) {
+  fetch(`/api/visa/checklist/${id}/toggle`, {method:'POST'}).then(r=>r.json()).then(d=>{
+    el.classList.toggle('done', d.completed == 1);
+    const box = el.querySelector('.check-box');
+    box.textContent = d.completed ? '✓' : '';
+  });
+}
+scrollChat();
+</script>
+{% endblock %}

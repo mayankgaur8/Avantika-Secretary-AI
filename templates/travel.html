@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}Travel Planner — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Travel Planner{% endblock %}
+{% block page_subtitle %}Plan trips, track fares, and manage itineraries{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-secondary btn-sm" onclick="document.getElementById('addTripModal').classList.add('open')">+ New Trip</button>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block content %}
+
+<div style="display:grid; grid-template-columns:1fr 340px; gap:20px; align-items:start;">
+
+  <!-- LEFT: TRIPS -->
+  <div>
+    <div class="section-header">
+      <div><div class="section-title">Your Trips</div></div>
+    </div>
+
+    {% if travel_requests %}
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      {% for trip in travel_requests %}
+      <div class="card">
+        <div class="card-header">
+          <div style="width:40px;height:40px;background:var(--blue-dim);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">✈</div>
+          <div style="flex:1;">
+            <div style="font-weight:700; font-size:15px;">{{ trip.origin }} → {{ trip.destination }}</div>
+            <div style="font-size:12px; color:var(--text-muted);">
+              {{ trip.depart_date or 'No date set' }}{% if trip.return_date %} → {{ trip.return_date }}{% endif %}
+              {% if trip.purpose %} · {{ trip.purpose }}{% endif %}
+            </div>
+          </div>
+          <span class="status-badge {{ (trip.status or 'planning') | lower }}">{{ (trip.status or 'planning') | title }}</span>
+          <div style="display:flex; gap:6px;">
+            <form method="post" action="/actions/travel/{{ trip.id }}/recommend" style="display:inline;">
+              <button class="btn btn-secondary btn-sm">↻ Recs</button>
+            </form>
+            <form method="post" action="/actions/travel/{{ trip.id }}/confirm" style="display:inline;">
+              <button class="btn btn-success btn-sm">✓ Confirm</button>
+            </form>
+          </div>
+        </div>
+
+        {% if trip.options %}
+        <div class="card-body">
+          <!-- FLIGHT OPTIONS -->
+          {% set flight_opts = trip.options | selectattr('category', 'equalto', 'flight') | list %}
+          {% if flight_opts %}
+          <div style="margin-bottom:16px;">
+            <div style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">Flight Options</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              {% for opt in flight_opts[:3] %}
+              <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:12px; display:flex; gap:12px; align-items:center; {{ 'border-color:var(--green); background:rgba(16,185,129,0.05);' if loop.first else '' }}">
+                {% if loop.first %}<span class="tag green" style="flex-shrink:0;">Best</span>{% endif %}
+                <div style="flex:1;">
+                  <div style="font-weight:600; font-size:13px;">{{ opt.provider }}</div>
+                  <div style="font-size:12px; color:var(--text-muted);">
+                    {{ opt.stops }} stop{% if opt.stops != 1 %}s{% endif %}
+                    {% if opt.duration_hours %} · {{ opt.duration_hours }}h{% endif %}
+                    {% if opt.baggage_included %} · Baggage incl.{% endif %}
+                  </div>
+                </div>
+                <div style="text-align:right; flex-shrink:0;">
+                  <div style="font-size:16px; font-weight:800; color:var(--green);">{{ opt.currency }} {{ '{:,}'.format(opt.price) }}</div>
+                  <div style="font-size:11px; color:var(--text-muted);">{{ opt.cancellation_flexibility or 'Check policy' }}</div>
+                </div>
+                {% if opt.booking_url %}
+                <a href="{{ opt.booking_url }}" target="_blank" class="btn btn-primary btn-sm">Book →</a>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- ACCOMMODATION OPTIONS -->
+          {% set stay_opts = trip.options | selectattr('category', 'equalto', 'accommodation') | list %}
+          {% if stay_opts %}
+          <div>
+            <div style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">Accommodation</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              {% for opt in stay_opts[:3] %}
+              <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:12px; display:flex; gap:12px; align-items:center;">
+                <div style="flex:1;">
+                  <div style="font-weight:600; font-size:13px;">{{ opt.provider }}</div>
+                  <div style="font-size:12px; color:var(--text-muted);">
+                    {{ opt.stay_type or 'Hotel' }}{% if opt.cancellation_flexibility %} · {{ opt.cancellation_flexibility }}{% endif %}
+                  </div>
+                </div>
+                <div style="text-align:right; flex-shrink:0;">
+                  <div style="font-size:16px; font-weight:800; color:var(--blue);">{{ opt.currency }} {{ '{:,}'.format(opt.total_price) }}</div>
+                  <div style="font-size:11px; color:var(--text-muted);">total stay</div>
+                </div>
+                {% if opt.booking_url %}
+                <a href="{{ opt.booking_url }}" target="_blank" class="btn btn-secondary btn-sm">Book →</a>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
+          {% if trip.plan and trip.plan.recommendation_notes %}
+          <div style="margin-top:14px; background:var(--accent-dim); border:1px solid rgba(99,102,241,0.3); border-radius:8px; padding:12px;">
+            <div style="font-size:11px; font-weight:700; color:var(--accent-light); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">AI Recommendation</div>
+            <div style="font-size:12.5px; color:var(--text-secondary);">{{ trip.plan.recommendation_notes }}</div>
+          </div>
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="card-body">
+          <div style="text-align:center; padding:20px 0; font-size:13px; color:var(--text-muted);">
+            Click "↻ Recs" to generate flight and hotel options with AI recommendations.
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-state-icon">✈</div>
+        <div class="empty-state-title">No trips planned yet</div>
+        <div class="empty-state-desc">Add a trip to get AI-recommended flights, hotels, and itineraries.</div>
+        <button class="btn btn-primary btn-sm mt-3" onclick="document.getElementById('addTripModal').classList.add('open')">+ Plan First Trip</button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- RIGHT SIDEBAR: PRICE WATCHES -->
+  <div style="display:flex; flex-direction:column; gap:16px;">
+
+    <div class="card">
+      <div class="card-header">
+        <span>🔔</span>
+        <span class="card-title">Price Watches</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('addWatchModal').classList.add('open')">+</button>
+      </div>
+      {% if price_watches %}
+      <div style="padding:0;">
+        {% for w in price_watches %}
+        <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13px;">{{ w.route_or_property }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ w.watch_type | title }} · {{ w.date_range or 'Any time' }}</div>
+          </div>
+          <div style="text-align:right; flex-shrink:0;">
+            {% if w.target_price %}<div style="font-size:13px; font-weight:700; color:var(--amber);">Target: {{ w.currency }} {{ '{:,}'.format(w.target_price) }}</div>{% endif %}
+            {% if w.current_price %}<div style="font-size:11px; color:var(--text-muted);">Now: {{ w.currency }} {{ '{:,}'.format(w.current_price) }}</div>{% endif %}
+          </div>
+          <button class="btn btn-ghost btn-sm btn-icon" onclick="stopWatch({{ w.id }}, this)">✕</button>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="padding:20px 16px; text-align:center; font-size:12px; color:var(--text-muted);">
+        No price watches active. Set a target price to get alerts.
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ASK AI FOR TRAVEL -->
+    <div class="card">
+      <div class="card-header"><span>✦</span><span class="card-title">AI Travel Help</span></div>
+      <div class="card-body" style="padding:14px;">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          {% set travel_prompts = [
+            'Find cheapest BLR to FRA flights in May',
+            'Best hotels near Frankfurt city center under €100/night',
+            'What is the cheapest month to fly BLR to Berlin?',
+            'Create a 5-day Frankfurt itinerary for a job seeker',
+            'What documents do I need to enter Germany?',
+          ] %}
+          {% for p in travel_prompts %}
+          <a href="/chat?q={{ p | urlencode }}" class="btn btn-ghost btn-sm" style="text-align:left; justify-content:flex-start; font-size:12px;">
+            → {{ p }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ADD TRIP MODAL -->
+<div class="modal-overlay" id="addTripModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title">Plan a New Trip</div><div class="modal-subtitle">AI will suggest flights and hotels</div></div>
+      <button class="modal-close" onclick="document.getElementById('addTripModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form method="post" action="/actions/travel">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">From (City/Airport) *</label>
+            <input type="text" class="form-input" name="origin" required placeholder="BLR / Bangalore">
+          </div>
+          <div class="form-group">
+            <label class="form-label">To (City/Airport) *</label>
+            <input type="text" class="form-input" name="destination" required placeholder="FRA / Frankfurt">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Depart Date</label>
+            <input type="date" class="form-input" name="depart_date">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Return Date</label>
+            <input type="date" class="form-input" name="return_date">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Budget (optional)</label>
+            <input type="number" class="form-input" name="budget" placeholder="e.g. 50000">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Currency</label>
+            <select class="form-select" name="currency">
+              <option value="INR">INR ₹</option>
+              <option value="EUR">EUR €</option>
+              <option value="USD">USD $</option>
+              <option value="AED">AED د.إ</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Purpose</label>
+          <select class="form-select" name="purpose">
+            <option>Job search / relocation scouting</option>
+            <option>Business trip</option>
+            <option>Interview</option>
+            <option>Visa appointment</option>
+            <option>Leisure</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" name="notes" placeholder="Any preferences, requirements..."></textarea>
+        </div>
+        <div class="modal-footer" style="padding:0; margin-top:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('addTripModal').classList.remove('open')">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Plan Trip with AI ✦</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ADD PRICE WATCH MODAL -->
+<div class="modal-overlay" id="addWatchModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title">Add Price Watch</div><div class="modal-subtitle">Get alerted when price drops</div></div>
+      <button class="modal-close" onclick="document.getElementById('addWatchModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="watchForm" onsubmit="submitWatch(event)">
+        <div class="form-group">
+          <label class="form-label">Route or Property *</label>
+          <input type="text" class="form-input" name="route_or_property" required placeholder="BLR → FRA or Hotel Name">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="watch_type">
+              <option value="flight">Flight</option>
+              <option value="hotel">Hotel</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date Range</label>
+            <input type="text" class="form-input" name="date_range" placeholder="e.g. May 2026">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Target Price</label>
+            <input type="number" class="form-input" name="target_price" placeholder="40000">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Currency</label>
+            <select class="form-select" name="currency">
+              <option value="INR">INR</option>
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer" style="padding:0; margin-top:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('addWatchModal').classList.remove('open')">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Set Price Watch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function stopWatch(id, btn) {
+  if (!confirm('Stop watching this price?')) return;
+  fetch(`/api/travel/watches/${id}/stop`, {method:'POST'})
+    .then(r => r.json())
+    .then(() => btn.closest('div[style]').remove());
+}
+
+function submitWatch(e) {
+  e.preventDefault();
+  const form = new FormData(e.target);
+  const data = Object.fromEntries(form.entries());
+  fetch('/api/travel/watches', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(() => window.location.reload());
+}
+</script>
+{% endblock %}
