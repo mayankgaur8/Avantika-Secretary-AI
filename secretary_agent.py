@@ -167,7 +167,6 @@ class SecretaryAgent:
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=self._system,
-            thinking={"type": "adaptive"},
             messages=self.history,
         ) as stream:
             full_text = ""
