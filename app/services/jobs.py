@@ -504,6 +504,40 @@ def dashboard_job_summary() -> dict:
     }
 
 
+def count_pending_review() -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM job_leads WHERE review_status = 'pending_review'"
+        ).fetchone()
+    return row["cnt"] if row else 0
+
+
+def list_pending_review_jobs() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM job_leads
+            WHERE review_status = 'pending_review'
+            ORDER BY priority_score DESC, created_at DESC
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def review_job(job_id: int, action: str) -> dict:
+    """action: 'approve' | 'skip'"""
+    if action not in ("approve", "skip"):
+        raise ValueError("action must be 'approve' or 'skip'")
+    review_status = "approved" if action == "approve" else "skipped"
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE job_leads SET review_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (review_status, job_id),
+        )
+        row = conn.execute("SELECT * FROM job_leads WHERE id = ?", (job_id,)).fetchone()
+    return dict(row)
+
+
 def clear_job_leads() -> dict:
     with get_conn() as conn:
         deleted = conn.execute("SELECT COUNT(*) AS count FROM job_leads").fetchone()["count"]

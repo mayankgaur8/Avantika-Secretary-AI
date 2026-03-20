@@ -13,9 +13,47 @@ import httpx
 from app.db import get_conn
 from app.services.jobs import compute_priority
 
-DEFAULT_JOB_FEED_URLS = ["https://himalayas.app/jobs/api?limit=20"]
-ROLE_KEYWORDS = ("java", "spring", "backend", "software architect", "technical lead", "fullstack")
-LOCATION_KEYWORDS = ("germany", "berlin", "munich", "frankfurt", "hamburg", "stuttgart", "dubai", "uae", "abu dhabi")
+DEFAULT_JOB_FEED_URLS = [
+    "https://www.arbeitnow.com/api/job-board-api",
+    "https://himalayas.app/jobs/api?limit=20",
+]
+ARBEITNOW_SOURCE = "arbeitnow.com"
+ROLE_KEYWORDS = ("java", "spring", "backend", "software architect", "technical lead", "fullstack", "jvm", "kotlin")
+LOCATION_KEYWORDS = ("germany", "berlin", "munich", "frankfurt", "hamburg", "stuttgart", "cologne", "düsseldorf", "remote", "dubai", "uae", "abu dhabi")
+
+# ─── Salary Benchmarks ────────────────────────────────────────────────────────
+_SALARY_GERMANY = {
+    "principal": (105000, 135000),
+    "architect": (100000, 130000),
+    "head of": (110000, 140000),
+    "manager": (95000, 120000),
+    "lead": (90000, 115000),
+    "senior": (80000, 100000),
+    "engineer": (70000, 90000),
+}
+_SALARY_UAE = {  # AED annual (÷12 for monthly)
+    "principal": (420000, 540000),
+    "architect": (390000, 510000),
+    "lead": (330000, 420000),
+    "senior": (280000, 360000),
+    "engineer": (240000, 300000),
+}
+
+
+def suggest_salary(role_title: str, country: str) -> tuple[int, int, str]:
+    """Return (salary_min, salary_max, currency) based on role + country."""
+    role_lower = (role_title or "").lower()
+    country_lower = (country or "").lower()
+    if "uae" in country_lower or "dubai" in country_lower or "emirates" in country_lower:
+        guide = _SALARY_UAE
+        currency = "AED"
+    else:
+        guide = _SALARY_GERMANY
+        currency = "EUR"
+    for keyword, (lo, hi) in guide.items():
+        if keyword in role_lower:
+            return lo, hi, currency
+    return guide["senior"][0], guide["senior"][1], currency
 
 
 def _log_run(run_type: str, status: str, details: str, target_id: int | None = None) -> None:
@@ -83,7 +121,8 @@ def _location_country(location: str) -> tuple[str | None, str | None]:
     return None, normalized
 
 
-def _insert_or_update_job(item: dict) -> None:
+def _insert_or_update_job(item: dict) -> bool:
+    """Insert or update a job lead. Returns True if a brand-new row was inserted."""
     with get_conn() as conn:
         exists = conn.execute(
             """
@@ -93,14 +132,22 @@ def _insert_or_update_job(item: dict) -> None:
             (item["company"], item["role_title"], item.get("apply_url")),
         ).fetchone()
 
-        priority = compute_priority(item.get("match_score", 6.5), item.get("visa_support"), item.get("salary_max"))
+        # Fill in salary from benchmark if not provided by feed
+        s_min = item.get("salary_min")
+        s_max = item.get("salary_max")
+        s_cur = item.get("salary_currency")
+        if not s_max:
+            s_min, s_max, s_cur = suggest_salary(item.get("role_title", ""), item.get("country", ""))
+
+        priority = compute_priority(item.get("match_score", 6.5), item.get("visa_support"), s_max)
 
         if exists:
             conn.execute(
                 """
                 UPDATE job_leads
-                SET country = ?, city = ?, source = ?, salary_min = ?, salary_max = ?,
-                    salary_currency = ?, visa_support = ?, match_score = ?, credibility_score = ?,
+                SET country = ?, city = ?, source = ?, salary_min = COALESCE(salary_min, ?),
+                    salary_max = COALESCE(salary_max, ?), salary_currency = COALESCE(salary_currency, ?),
+                    visa_support = ?, match_score = ?, credibility_score = ?,
                     priority_score = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
@@ -108,9 +155,7 @@ def _insert_or_update_job(item: dict) -> None:
                     item.get("country"),
                     item.get("city"),
                     item.get("source"),
-                    item.get("salary_min"),
-                    item.get("salary_max"),
-                    item.get("salary_currency"),
+                    s_min, s_max, s_cur,
                     item.get("visa_support"),
                     item.get("match_score", 6.5),
                     item.get("credibility_score", 7.0),
@@ -119,14 +164,15 @@ def _insert_or_update_job(item: dict) -> None:
                     exists["id"],
                 ),
             )
+            return False
         else:
             conn.execute(
                 """
                 INSERT INTO job_leads (
                     company, role_title, country, city, source, apply_url,
                     salary_min, salary_max, salary_currency, visa_support,
-                    match_score, credibility_score, priority_score, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    match_score, credibility_score, priority_score, notes, review_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')
                 """,
                 (
                     item["company"],
@@ -135,9 +181,7 @@ def _insert_or_update_job(item: dict) -> None:
                     item.get("city"),
                     item.get("source"),
                     item.get("apply_url"),
-                    item.get("salary_min"),
-                    item.get("salary_max"),
-                    item.get("salary_currency"),
+                    s_min, s_max, s_cur,
                     item.get("visa_support"),
                     item.get("match_score", 6.5),
                     item.get("credibility_score", 7.0),
@@ -145,6 +189,7 @@ def _insert_or_update_job(item: dict) -> None:
                     item.get("notes"),
                 ),
             )
+            return True
 
 
 def _allow_job_item(item: dict) -> bool:
@@ -155,6 +200,42 @@ def _allow_job_item(item: dict) -> bool:
     role_match = any(keyword in role_blob for keyword in ROLE_KEYWORDS)
     location_match = any(keyword in location_blob for keyword in LOCATION_KEYWORDS)
     return role_match and location_match
+
+
+def _parse_arbeitnow(payload: dict, source: str) -> list[dict]:
+    """Parse Arbeitnow job board API response (Germany-focused)."""
+    records = payload.get("data", [])
+    items = []
+    for record in records[:80]:
+        title = (record.get("title") or "").strip()
+        company = (record.get("company_name") or "Unknown Company").strip()
+        location = (record.get("location") or "Germany").strip()
+        url = record.get("url")
+        tags = record.get("tags") or []
+        description = (record.get("description") or "")[:500]
+        remote = record.get("remote", False)
+
+        role_blob = f"{title} {' '.join(tags)} {description[:300]}".lower()
+        if not any(kw in role_blob for kw in ROLE_KEYWORDS):
+            continue
+
+        country = "Germany"
+        city = location if location.lower() not in ("germany", "deutschland", "") else None
+
+        items.append({
+            "company": company,
+            "role_title": title,
+            "country": country,
+            "city": city,
+            "source": source,
+            "apply_url": url,
+            "visa_support": "Unknown",
+            "lead_type": "live_opening",
+            "match_score": 7.2,
+            "credibility_score": 7.5,
+            "notes": f"{'[Remote] ' if remote else ''}{description}",
+        })
+    return items
 
 
 def _parse_rss(xml_text: str, source: str) -> list[dict]:
@@ -245,24 +326,55 @@ def sync_live_job_sources() -> dict:
 
     source_stats = []
     total_items = 0
-    with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+    new_count = 0
+    with httpx.Client(timeout=25.0, follow_redirects=True) as client:
         for url in urls:
-            response = client.get(url)
-            response.raise_for_status()
+            try:
+                response = client.get(url)
+                response.raise_for_status()
+            except Exception as exc:
+                source_stats.append({"source": url, "items": 0, "error": str(exc)})
+                continue
             content_type = response.headers.get("content-type", "")
             source = urlparse(url).netloc or url
-            if "xml" in content_type or response.text.lstrip().startswith("<"):
+            if ARBEITNOW_SOURCE in source:
+                items = _parse_arbeitnow(response.json(), source)
+            elif "xml" in content_type or response.text.lstrip().startswith("<"):
                 items = _parse_rss(response.text, source)
             else:
                 items = _parse_json_jobs(response.json(), source)
             for item in items:
-                _insert_or_update_job(item)
+                if _insert_or_update_job(item):
+                    new_count += 1
             source_stats.append({"source": source, "items": len(items)})
             total_items += len(items)
 
-    result = {"sources": source_stats, "total_items": total_items}
+    result = {"sources": source_stats, "total_items": total_items, "new_count": new_count}
     _log_run("job_sync", "success", json.dumps(result))
     return result
+
+
+def daily_job_digest() -> dict:
+    """Run daily job sync and create an in-app reminder when new jobs are found."""
+    try:
+        result = sync_live_job_sources()
+        new_count = result.get("new_count", 0)
+        if new_count > 0:
+            from datetime import datetime
+            from app.services.reminders import create_reminder
+            now = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            create_reminder(
+                title=f"{new_count} new Java job{'s' if new_count > 1 else ''} found — review now",
+                scheduled_for=now,
+                message=f"Daily job sync found {new_count} new matching job(s). Visit /jobs/review to approve or skip.",
+                reminder_type="job_alert",
+                channel="app",
+            )
+        _log_run("daily_digest", "success", json.dumps(result))
+        return result
+    except Exception as exc:
+        _log_run("daily_digest", "error", str(exc))
+        raise
 
 
 def _amadeus_access_token(client: httpx.Client) -> str:

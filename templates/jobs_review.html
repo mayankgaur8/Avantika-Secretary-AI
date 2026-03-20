@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}New Jobs — Avantika SecretaryAI{% endblock %}
+{% block page_title %}New Jobs to Review{% endblock %}
+{% block page_subtitle %}Daily live feed — approve, apply, or skip each match{% endblock %}
+
+{% block topbar_actions %}
+<form method="post" action="/actions/run-daily-digest" style="display:inline;">
+  <button class="btn btn-secondary btn-sm">↻ Sync Now</button>
+</form>
+<a href="/pipeline" class="btn btn-ghost btn-sm">Pipeline →</a>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats bar -->
+<div class="stats-row" style="grid-template-columns:repeat(3,1fr); margin-bottom:20px;">
+  <div class="stat-card accent" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Pending Review</div>
+    <div class="stat-value" style="font-size:22px;" id="pendingCount">{{ jobs | length }}</div>
+  </div>
+  <div class="stat-card" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Last Sync</div>
+    <div class="stat-value" style="font-size:13px; padding-top:4px;">{{ last_sync[:16] if last_sync else 'Never' }}</div>
+  </div>
+  <div class="stat-card green" style="padding:14px;">
+    <div class="stat-label" style="font-size:10px;">Sources</div>
+    <div class="stat-value" style="font-size:13px; padding-top:4px;">Arbeitnow · Himalayas</div>
+  </div>
+</div>
+
+{% if not jobs %}
+<!-- Empty state -->
+<div class="card">
+  <div style="padding:60px; text-align:center; color:var(--text-muted);">
+    <div style="font-size:36px; margin-bottom:14px;">◈</div>
+    <div style="font-size:15px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">No new jobs to review</div>
+    <div style="font-size:13px; margin-bottom:20px;">The daily sync runs at <strong>8:00 AM IST</strong>. Click Sync Now to fetch jobs manually.</div>
+    <form method="post" action="/actions/run-daily-digest">
+      <button class="btn btn-primary btn-sm">↻ Run Sync Now</button>
+    </form>
+  </div>
+</div>
+{% else %}
+
+<!-- How-to hint -->
+<div style="font-size:12px; color:var(--text-muted); margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+  <span style="background:var(--accent-dim); color:var(--accent-light); padding:2px 8px; border-radius:20px; font-weight:600; font-size:10px;">TIP</span>
+  <span><strong>Add to Pipeline</strong> — saves to Kanban for manual application later &nbsp;·&nbsp; <strong>Apply Now</strong> — generates full draft pack + marks Applied &nbsp;·&nbsp; <strong>Skip</strong> — hides from queue</span>
+</div>
+
+<!-- Job cards -->
+<div id="jobCards" style="display:flex; flex-direction:column; gap:14px;">
+  {% for job in jobs %}
+  <div class="card job-review-card" id="card-{{ job.id }}" style="transition:opacity 0.3s, transform 0.3s;">
+    <div style="padding:16px 20px; display:flex; gap:14px; align-items:flex-start;">
+
+      <!-- Company logo initial -->
+      <div style="width:46px; height:46px; background:linear-gradient(135deg,var(--accent),var(--purple)); border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:800; color:white; flex-shrink:0; letter-spacing:-1px;">
+        {{ job.company[:2] | upper }}
+      </div>
+
+      <!-- Main info -->
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+          <div style="font-size:15px; font-weight:700; color:var(--text-primary);">{{ job.role_title }}</div>
+          {% if job.match_score %}
+          <span class="tag green" style="font-size:10px;">{{ (job.match_score * 10) | int }}% match</span>
+          {% endif %}
+          {% if job.source %}
+          <span class="tag" style="font-size:10px;">{{ job.source }}</span>
+          {% endif %}
+        </div>
+
+        <div style="font-size:13px; color:var(--text-secondary); margin-bottom:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span style="font-weight:600;">{{ job.company }}</span>
+          {% if job.city or job.country %}
+          <span style="color:var(--text-muted);">📍 {{ job.city or '' }}{% if job.city and job.country %}, {% endif %}{{ job.country or '' }}</span>
+          {% endif %}
+        </div>
+
+        <!-- Salary band -->
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+          {% set s_min = job.salary_suggested_min or job.salary_min %}
+          {% set s_max = job.salary_suggested_max or job.salary_max %}
+          {% set s_cur = job.salary_suggested_currency or job.salary_currency or 'EUR' %}
+          {% if s_max %}
+          <span class="tag green" style="font-size:11px; font-weight:700;">
+            💰 {{ s_cur }} {{ "{:,}".format(s_min | int) }}–{{ "{:,}".format(s_max | int) }}
+            {% if not job.salary_max %}<span style="opacity:0.7; font-weight:400;"> (market est.)</span>{% endif %}
+          </span>
+          {% endif %}
+          {% if 'Remote' in (job.notes or '') or 'remote' in (job.notes or '').lower() %}
+          <span class="tag blue" style="font-size:10px;">Remote</span>
+          {% endif %}
+        </div>
+
+        <!-- Notes preview -->
+        {% if job.notes %}
+        <div style="font-size:12px; color:var(--text-muted); line-height:1.5; margin-bottom:12px;">
+          {{ job.notes[:200] }}{% if job.notes | length > 200 %}…{% endif %}
+        </div>
+        {% endif %}
+
+        {% if job.apply_url %}
+        <a href="{{ job.apply_url }}" target="_blank" style="font-size:11px; color:var(--accent-light); margin-bottom:10px; display:inline-block;">
+          View job listing →
+        </a>
+        {% endif %}
+      </div>
+
+      <!-- Actions (desktop: column on right) -->
+      <div class="job-actions-col" style="display:flex; flex-direction:column; gap:8px; flex-shrink:0; min-width:140px;">
+        <button class="btn btn-primary btn-sm" onclick="applyNow({{ job.id }}, this)" title="Generate draft pack + mark Applied">
+          ✦ Apply Now
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="addToPipeline({{ job.id }}, this)" title="Save to pipeline for later">
+          + Pipeline
+        </button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--text-muted);" onclick="skipJob({{ job.id }}, this)">
+          Skip
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- All done state (shown after all cards dismissed) -->
+<div id="allDone" style="display:none; padding:48px; text-align:center; color:var(--text-muted);">
+  <div style="font-size:32px; margin-bottom:12px;">✓</div>
+  <div style="font-size:14px; font-weight:600; color:var(--text-secondary);">All done for today!</div>
+  <div style="font-size:12px; margin-top:6px;">Applied and pipeline jobs are in your <a href="/pipeline" style="color:var(--accent-light);">Kanban board →</a></div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<style>
+  @media (max-width: 640px) {
+    .job-review-card > div { flex-direction: column !important; }
+    .job-actions-col { flex-direction: row !important; min-width: unset !important; flex-wrap: wrap; }
+  }
+</style>
+<script>
+let remaining = {{ jobs | length }};
+
+function dismissCard(jobId) {
+  const card = document.getElementById('card-' + jobId);
+  if (!card) return;
+  card.style.opacity = '0';
+  card.style.transform = 'translateX(40px)';
+  setTimeout(() => {
+    card.remove();
+    remaining--;
+    document.getElementById('pendingCount').textContent = remaining;
+    if (remaining <= 0) document.getElementById('allDone').style.display = 'block';
+  }, 300);
+}
+
+function applyNow(jobId, btn) {
+  btn.textContent = '…';
+  btn.disabled = true;
+  fetch('/api/jobs/review/' + jobId + '/apply-now', { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      showFlash('Applied! Draft pack generated and added to pipeline.', 'success');
+      dismissCard(jobId);
+    })
+    .catch(() => { btn.textContent = '✦ Apply Now'; btn.disabled = false; });
+}
+
+function addToPipeline(jobId, btn) {
+  btn.textContent = '…';
+  btn.disabled = true;
+  fetch('/api/jobs/review/' + jobId + '/approve', { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      showFlash('Added to pipeline as Identified.', 'success');
+      dismissCard(jobId);
+    })
+    .catch(() => { btn.textContent = '+ Pipeline'; btn.disabled = false; });
+}
+
+function skipJob(jobId, btn) {
+  btn.disabled = true;
+  fetch('/api/jobs/review/' + jobId + '/skip', { method: 'POST' })
+    .then(r => r.json())
+    .then(() => dismissCard(jobId))
+    .catch(() => { btn.disabled = false; });
+}
+</script>
+{% endblock %}

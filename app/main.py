@@ -7,6 +7,8 @@ import os
 from datetime import datetime
 from urllib.parse import quote
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
@@ -15,15 +17,19 @@ from fastapi.templating import Jinja2Templates
 
 from app.db import init_db
 from app.services.browser_automation import run_browser_apply
-from app.services.integrations import clear_automation_runs, get_last_sync_time, list_automation_runs, sync_live_job_sources
+from app.services.integrations import (
+    clear_automation_runs, daily_job_digest, get_last_sync_time,
+    list_automation_runs, suggest_salary, sync_live_job_sources,
+)
 from app.services.whatsapp import handle_whatsapp_message, validate_twilio_request, get_threads_for_display
 from app.services.whatsapp_store import list_whatsapp_messages
 from app.services.web_chat import get_chat_state, reset_chat_session, send_chat_message
 from app.schemas import ApplicationCreate, JobLeadCreate, TravelRequestCreate
 from app.services.jobs import (
-    apply_to_job, create_job_lead, dashboard_job_summary,
+    apply_to_job, count_pending_review, create_job_lead, dashboard_job_summary,
     generate_application_draft, get_application_draft,
-    import_target_companies, list_applications, list_job_leads, clear_job_leads,
+    import_target_companies, list_applications, list_job_leads, list_pending_review_jobs,
+    review_job, clear_job_leads,
 )
 from app.services.travel import (
     confirm_travel_plan, create_travel_request, dashboard_travel_summary,
@@ -57,10 +63,28 @@ CHAT_SESSION_COOKIE = "secretary_chat_session"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+_scheduler: BackgroundScheduler | None = None
+
 
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    global _scheduler
+    _scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+    _scheduler.add_job(
+        daily_job_digest,
+        CronTrigger(hour=8, minute=0, timezone="Asia/Kolkata"),
+        id="daily_job_sync",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    _scheduler.start()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    if _scheduler and _scheduler.running:
+        _scheduler.shutdown(wait=False)
 
 
 def _time_greeting() -> str:
@@ -84,6 +108,7 @@ def _base_ctx(request: Request) -> dict:
         "user": user,
         "pipeline_summary": pipeline,
         "reminders_due": due,
+        "jobs_to_review": count_pending_review(),
         "active_page": "",
         "message": None,
         "message_level": "info",
@@ -140,6 +165,52 @@ def dashboard(request: Request, message: str | None = None, level: str = "info")
     resp = templates.TemplateResponse(request, "dashboard.html", ctx)
     _set_cookie(resp, session_id)
     return resp
+
+
+# ─── JOB REVIEW QUEUE ────────────────────────────────────────────────────────
+
+@app.get("/jobs/review", response_class=HTMLResponse)
+def jobs_review_page(request: Request, message: str | None = None, level: str = "info"):
+    ctx = _base_ctx(request)
+    jobs = list_pending_review_jobs()
+    # Enrich each job with a salary suggestion if feed didn't provide one
+    for job in jobs:
+        if not job.get("salary_max"):
+            lo, hi, cur = suggest_salary(job.get("role_title", ""), job.get("country", ""))
+            job["salary_suggested_min"] = lo
+            job["salary_suggested_max"] = hi
+            job["salary_suggested_currency"] = cur
+        else:
+            job["salary_suggested_min"] = job["salary_min"]
+            job["salary_suggested_max"] = job["salary_max"]
+            job["salary_suggested_currency"] = job.get("salary_currency") or "EUR"
+    ctx.update({
+        "active_page": "review",
+        "jobs": jobs,
+        "last_sync": get_last_sync_time("job_sync"),
+        "message": message,
+        "message_level": level,
+    })
+    return templates.TemplateResponse(request, "jobs_review.html", ctx)
+
+
+@app.post("/api/jobs/review/{job_id}/approve")
+def api_review_approve(job_id: int):
+    return review_job(job_id, "approve")
+
+
+@app.post("/api/jobs/review/{job_id}/skip")
+def api_review_skip(job_id: int):
+    return review_job(job_id, "skip")
+
+
+@app.post("/api/jobs/review/{job_id}/apply-now")
+def api_review_apply_now(job_id: int):
+    review_job(job_id, "approve")
+    generate_application_draft(job_id)
+    apply_to_job(job_id)
+    move_pipeline_stage(job_id, "Applied")
+    return {"status": "applied", "job_id": job_id}
 
 
 # ─── PIPELINE ─────────────────────────────────────────────────────────────────
@@ -512,6 +583,16 @@ def api_status():
 def action_import_targets():
     r = import_target_companies()
     return _redirect("/pipeline", f"Imported {r['inserted']} companies.", "success")
+
+
+@app.post("/actions/run-daily-digest")
+def action_run_digest():
+    try:
+        r = daily_job_digest()
+        new = r.get("new_count", 0)
+        return _redirect("/jobs/review", f"Sync done — {new} new job{'s' if new != 1 else ''} found.", "success")
+    except Exception as exc:
+        return _redirect("/jobs/review", str(exc), "error")
 
 
 @app.post("/actions/sync-live-jobs")

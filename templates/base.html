@@ -36,6 +36,12 @@
 
       <div class="nav-section">
         <span class="nav-label">Career</span>
+        <a href="/jobs/review" class="nav-item {% if active_page == 'review' %}active{% endif %}">
+          <span class="nav-icon">◈</span> New Jobs
+          {% if jobs_to_review and jobs_to_review > 0 %}
+          <span class="nav-badge green">{{ jobs_to_review }}</span>
+          {% endif %}
+        </a>
         <a href="/pipeline" class="nav-item {% if active_page == 'pipeline' %}active{% endif %}">
           <span class="nav-icon">▣</span> Job Pipeline
           {% if pipeline_summary and pipeline_summary.follow_ups_due > 0 %}

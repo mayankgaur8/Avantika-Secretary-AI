@@ -349,6 +349,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE job_leads ADD COLUMN next_action TEXT")
     if not _has_column(conn, "job_leads", "next_action_due"):
         conn.execute("ALTER TABLE job_leads ADD COLUMN next_action_due TEXT")
+    if not _has_column(conn, "job_leads", "review_status"):
+        conn.execute("ALTER TABLE job_leads ADD COLUMN review_status TEXT DEFAULT 'approved'")
     # applications migrations
     if not _has_column(conn, "applications", "submission_proof"):
         conn.execute("ALTER TABLE applications ADD COLUMN submission_proof TEXT")
