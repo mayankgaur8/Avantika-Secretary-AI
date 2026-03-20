@@ -607,6 +607,63 @@ def scheduler_status():
     }
 
 
+@app.get("/api/job-sync/status")
+def job_sync_status():
+    """Detailed job sync diagnostics."""
+    from app.db import get_conn as _gc
+    with _gc() as conn:
+        total = conn.execute("SELECT COUNT(*) AS c FROM job_leads").fetchone()["c"]
+        pending = conn.execute(
+            "SELECT COUNT(*) AS c FROM job_leads WHERE review_status='pending_review'"
+        ).fetchone()["c"]
+        live = conn.execute(
+            "SELECT COUNT(*) AS c FROM job_leads WHERE lead_type='live_opening'"
+        ).fetchone()["c"]
+        last_runs = conn.execute(
+            "SELECT run_type, status, details, created_at FROM automation_runs "
+            "WHERE run_type IN ('job_sync','daily_digest') ORDER BY id DESC LIMIT 10"
+        ).fetchall()
+    runs = []
+    for r in last_runs:
+        item = dict(r)
+        try:
+            item["details_parsed"] = json.loads(item.get("details") or "{}")
+        except Exception:
+            item["details_parsed"] = {}
+        runs.append(item)
+    return {
+        "total_jobs": total,
+        "pending_review": pending,
+        "live_openings": live,
+        "recent_runs": runs,
+        "scheduler_running": bool(_scheduler and _scheduler.running),
+        "last_job_sync": get_last_sync_time("job_sync"),
+    }
+
+
+@app.get("/api/ai/status")
+def ai_status():
+    """Check AI platform connectivity."""
+    from app.services.platform_ai import _PLATFORM_URL, _APP_KEY, is_configured
+    configured = is_configured()
+    reachable = False
+    error = None
+    if configured:
+        import httpx as _httpx
+        try:
+            r = _httpx.get(_PLATFORM_URL.rsplit("/", 1)[0] + "/health", timeout=5)
+            reachable = r.status_code < 500
+        except Exception as exc:
+            error = str(exc)
+    return {
+        "platform_url_set": configured,
+        "app_key_set": bool(_APP_KEY),
+        "platform_reachable": reachable,
+        "error": error,
+        "local_fallback_available": bool(os.getenv("ANTHROPIC_API_KEY")),
+    }
+
+
 # ─── STATUS / API ─────────────────────────────────────────────────────────────
 
 @app.get("/api/status")

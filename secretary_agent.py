@@ -1,9 +1,25 @@
-"""Core Secretary Agent with Anthropic API integration."""
+"""
+Core Secretary Agent.
 
-import anthropic
+Routing priority:
+  1. shared-ai-platform (AI_PLATFORM_URL + AI_APP_KEY)  — production
+  2. Anthropic SDK (ANTHROPIC_API_KEY)                  — local dev fallback
+  3. Friendly error message                             — neither configured
+
+This ensures avantika-secretary-ai never calls Anthropic/OpenAI/Ollama directly
+in production. All AI traffic routes through shared-ai-platform.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
 from pathlib import Path
 from typing import Iterator
+
 from config import MODEL, MAX_TOKENS, MEMORY_FILES, DOCS
+
+logger = logging.getLogger("secretaryai.agent")
 
 SYSTEM_PROMPT = """\
 You are the user's Executive Travel and Job Search Secretary Agent.
@@ -151,19 +167,63 @@ def _build_context_appendix() -> str:
 
 
 class SecretaryAgent:
-    def __init__(self):
-        self.client = anthropic.Anthropic()
-        self.history: list[dict] = []
+    """
+    AI secretary with automatic routing:
+    - Production: shared-ai-platform (AI_PLATFORM_URL)
+    - Local dev: direct Anthropic (ANTHROPIC_API_KEY)
+    """
+
+    def __init__(self) -> None:
         self._system = SYSTEM_PROMPT + _build_context_appendix()
+        self.history: list[dict] = []
+
+        # Determine AI backend at init time so we fail fast on misconfiguration
+        from app.services.platform_ai import is_configured as platform_ready
+        self._use_platform = platform_ready()
+
+        if self._use_platform:
+            from app.services.platform_ai import PlatformAISession
+            self._platform_session = PlatformAISession(self._system)
+            logger.info("SecretaryAgent using shared-ai-platform (AI_PLATFORM_URL)")
+        elif os.getenv("ANTHROPIC_API_KEY"):
+            import anthropic
+            self._anthropic = anthropic.Anthropic()
+            logger.info("SecretaryAgent using direct Anthropic (local dev mode)")
+        else:
+            logger.warning(
+                "SecretaryAgent: neither AI_PLATFORM_URL nor ANTHROPIC_API_KEY is set. "
+                "AI responses will return a configuration error."
+            )
 
     def clear_history(self) -> None:
         self.history.clear()
+        if self._use_platform:
+            self._platform_session.clear_history()
+
+    def get_response(self, user_message: str) -> str:
+        """Send a message and return the full response as a string."""
+        if self._use_platform:
+            return self._platform_session.get_response(user_message)
+        return "".join(self.stream_response(user_message))
 
     def stream_response(self, user_message: str) -> Iterator[str]:
-        """Send a message and stream the response token by token."""
-        self.history.append({"role": "user", "content": user_message})
+        """Stream response tokens. Platform mode yields full reply in one chunk."""
+        if self._use_platform:
+            # Platform does not stream in this integration — yield single chunk
+            reply = self._platform_session.get_response(user_message)
+            yield reply
+            return
 
-        with self.client.messages.stream(
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            msg = (
+                "⚠️ AI is not configured. Set AI_PLATFORM_URL (production) "
+                "or ANTHROPIC_API_KEY (local dev) in your environment."
+            )
+            yield msg
+            return
+
+        self.history.append({"role": "user", "content": user_message})
+        with self._anthropic.messages.stream(
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=self._system,
@@ -173,12 +233,7 @@ class SecretaryAgent:
             for text in stream.text_stream:
                 full_text += text
                 yield text
-
         self.history.append({"role": "assistant", "content": full_text})
-
-    def get_response(self, user_message: str) -> str:
-        """Send a message and return the full response as a string."""
-        return "".join(self.stream_response(user_message))
 
     def get_doc(self, key: str) -> str:
         """Return full content of a working document."""
