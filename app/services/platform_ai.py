@@ -5,14 +5,16 @@ Architecture rule: avantika-secretary-ai NEVER calls Anthropic/OpenAI/Ollama dir
 All AI traffic goes through AI_PLATFORM_URL. The platform decides which model to use
 (Ollama → cheap model → premium fallback) based on its own routing logic.
 
-Request format (POST AI_PLATFORM_URL):
+Request format confirmed from shared-ai-platform OpenAPI schema (POST /v1/chat):
     {
-        "messages": [{"role": "user", "content": "..."}],
-        "system":   "optional system prompt",
-        "max_tokens": 2048
+        "message":          "latest user message (required)",
+        "session_id":       "optional — platform tracks conversation history",
+        "workflow_context": "optional system prompt / context",
+        "options":          {}
     }
 
 Auth header: X-Api-Key: <AI_APP_KEY>
+Set AI_PLATFORM_URL = https://<platform-host>/v1/chat  (note: /v1/chat, NOT /chat)
 
 Response: JSON with one of: reply / response / content / text / answer / message
 """
@@ -71,30 +73,41 @@ def _extract_reply(data: Any) -> str:
 
 
 def call(
-    messages: list[dict[str, str]],
+    message: str,
+    session_id: str | None = None,
     system: str = "",
     max_tokens: int | None = None,
 ) -> str:
     """
     Send a chat request to shared-ai-platform and return reply text.
+
+    Args:
+        message:    The latest user message (required by platform).
+        session_id: Optional session key — platform maintains conversation history.
+        system:     System prompt / context sent as workflow_context.
+        max_tokens: Passed in options dict if provided.
+
     Raises RuntimeError with a user-friendly message on any failure.
     """
     if not _PLATFORM_URL:
         raise RuntimeError(
             "AI_PLATFORM_URL is not set. "
-            "Add it to Azure App Settings: AI_PLATFORM_URL=https://your-platform.azurewebsites.net/api/chat"
+            "Add it to Azure App Settings: "
+            "AI_PLATFORM_URL=https://shared-ai-platform-xxx.azurewebsites.net/v1/chat"
         )
 
-    payload: dict[str, Any] = {
-        "messages": messages,
-        "max_tokens": max_tokens or _MAX_TOKENS,
-    }
+    # Match shared-ai-platform ChatRequest schema exactly
+    payload: dict[str, Any] = {"message": message}
+    if session_id:
+        payload["session_id"] = session_id
     if system:
-        payload["system"] = system
+        payload["workflow_context"] = system
+    if max_tokens:
+        payload["options"] = {"max_tokens": max_tokens}
 
     logger.info(
-        "AI request | url=%s | key_present=%s | messages=%d | max_tokens=%d",
-        _PLATFORM_URL, bool(_APP_KEY), len(messages), payload["max_tokens"],
+        "AI request | url=%s | key_present=%s | session=%s | msg_len=%d",
+        _PLATFORM_URL, bool(_APP_KEY), session_id or "none", len(message),
     )
 
     try:
@@ -154,23 +167,32 @@ def call(
 class PlatformAISession:
     """
     Stateful conversation session backed by the shared-ai-platform.
-    Maintains history locally and sends full context on each request.
+
+    The platform tracks conversation history server-side via session_id.
+    We only send the latest user message each turn, plus the session_id
+    so the platform can retrieve prior context.
+
     Drop-in replacement for SecretaryAgent.
     """
 
-    def __init__(self, system_prompt: str = "") -> None:
+    def __init__(self, system_prompt: str = "", session_id: str | None = None) -> None:
+        import uuid
         self.system = system_prompt
-        self.history: list[dict[str, str]] = []
+        self.session_id: str = session_id or uuid.uuid4().hex
 
     def clear_history(self) -> None:
-        self.history.clear()
+        """Reset session — new session_id causes platform to start fresh."""
+        import uuid
+        self.session_id = uuid.uuid4().hex
 
     def get_response(self, user_message: str) -> str:
-        self.history.append({"role": "user", "content": user_message})
         try:
-            reply = call(messages=list(self.history), system=self.system)
+            reply = call(
+                message=user_message,
+                session_id=self.session_id,
+                system=self.system,
+            )
         except RuntimeError as exc:
             reply = f"⚠️ {exc}"
             logger.warning("AI fallback message returned to user: %s", reply[:120])
-        self.history.append({"role": "assistant", "content": reply})
         return reply
