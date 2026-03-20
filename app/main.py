@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -66,9 +67,28 @@ if STATIC_DIR.exists():
 _scheduler: BackgroundScheduler | None = None
 
 
+def _run_startup_sync() -> None:
+    """Run job digest in background if no sync in last 20 hours."""
+    import time
+    time.sleep(10)  # let app finish booting first
+    try:
+        last = get_last_sync_time("job_sync")
+        if last:
+            cutoff = datetime.utcnow() - timedelta(hours=20)
+            if datetime.fromisoformat(last) > cutoff:
+                print("[SecretaryAI] Scheduler: recent sync found, skipping startup sync.", flush=True)
+                return
+        print("[SecretaryAI] Scheduler: no recent sync — running startup job digest...", flush=True)
+        result = daily_job_digest()
+        print(f"[SecretaryAI] Scheduler: startup sync done — {result.get('new_count', 0)} new jobs, {result.get('total_items', 0)} total.", flush=True)
+    except Exception as exc:
+        print(f"[SecretaryAI] Scheduler: startup sync failed — {exc}", flush=True)
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+
     global _scheduler
     _scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
     _scheduler.add_job(
@@ -79,6 +99,10 @@ def startup() -> None:
         misfire_grace_time=3600,
     )
     _scheduler.start()
+    print("[SecretaryAI] Scheduler: started — daily sync at 08:00 IST.", flush=True)
+
+    # Run a sync immediately on startup if no recent sync exists
+    threading.Thread(target=_run_startup_sync, daemon=True).start()
 
 
 @app.on_event("shutdown")
@@ -563,6 +587,24 @@ def whatsapp_health():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/scheduler/status")
+def scheduler_status():
+    last_sync = get_last_sync_time("job_sync")
+    last_digest = get_last_sync_time("daily_digest")
+    running = bool(_scheduler and _scheduler.running)
+    next_run = None
+    if running:
+        job = _scheduler.get_job("daily_job_sync")
+        if job and job.next_run_time:
+            next_run = job.next_run_time.isoformat()
+    return {
+        "scheduler_running": running,
+        "next_run_IST": next_run,
+        "last_job_sync": last_sync,
+        "last_digest": last_digest,
+    }
 
 
 # ─── STATUS / API ─────────────────────────────────────────────────────────────
