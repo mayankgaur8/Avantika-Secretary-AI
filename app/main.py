@@ -1030,6 +1030,46 @@ def remote_jobs_page(
     return templates.TemplateResponse(request, "remote_jobs.html", ctx)
 
 
+# ── Static routes FIRST (prevents "sync"/"stats"/etc. being matched by /{job_id}) ──
+
+@app.post("/api/remote-jobs/sync")
+def api_sync_remote_jobs():
+    """Trigger a full remote-job sync from all configured sources."""
+    logger.info("Manual sync triggered via POST /api/remote-jobs/sync")
+    try:
+        result = sync_remote_jobs()
+        logger.info(
+            "Manual sync complete: inserted=%d updated=%d skipped=%d errors=%d alerts=%s",
+            result.get("inserted", 0),
+            result.get("updated", 0),
+            result.get("duplicates_skipped", 0),
+            result.get("errors", 0),
+            result.get("new_alerts", 0),
+        )
+        return result
+    except Exception as exc:
+        logger.error("Manual sync failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/remote-jobs/stats")
+def api_remote_stats():
+    return get_discovery_stats()
+
+
+@app.get("/api/remote-jobs/money-feed")
+def api_money_feed():
+    """Travel-fund widget — top jobs by earnings potential (renamed from /travel-widget)."""
+    return get_travel_widget()
+
+
+@app.get("/api/remote-jobs/tracker")
+def api_applied_tracker():
+    return list_applied_jobs()
+
+
+# ── List route (exact match, no path segment after /remote-jobs) ──
+
 @app.get("/api/remote-jobs")
 def api_list_remote_jobs(
     source: str = "",
@@ -1059,29 +1099,7 @@ def api_list_remote_jobs(
     )
 
 
-@app.get("/api/remote-jobs/stats")
-def api_remote_stats():
-    return get_discovery_stats()
-
-
-@app.get("/api/remote-jobs/travel-widget")
-def api_travel_widget():
-    return get_travel_widget()
-
-
-@app.get("/api/remote-jobs/tracker")
-def api_applied_tracker():
-    return list_applied_jobs()
-
-
-@app.post("/api/remote-jobs/sync")
-def api_sync_remote_jobs():
-    try:
-        result = sync_remote_jobs()
-        return result
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
+# ── Dynamic routes LAST (/{job_id} only after all static paths are registered) ──
 
 @app.get("/api/remote-jobs/{job_id}")
 def api_get_remote_job(job_id: int):

@@ -517,10 +517,10 @@ def _upsert_job(job: dict) -> tuple[bool, int]:
 def sync_all_sources() -> dict:
     """
     Fetch jobs from all configured sources, normalise, dedup, and persist.
-    Returns a summary dict.
+    Returns a structured summary dict with per-source counts.
     """
     logger.info("Remote job sync starting …")
-    total_new = total_updated = total_errors = 0
+    total_new = total_updated = total_skipped = total_errors = 0
     source_stats: list[dict] = []
 
     with httpx.Client(timeout=30.0, follow_redirects=True) as client:
@@ -532,9 +532,10 @@ def sync_all_sources() -> dict:
         for source_name, fetcher in sources:
             try:
                 jobs = fetcher(client)
-                src_new = src_updated = 0
+                src_new = src_updated = src_skipped = 0
                 for job in jobs:
                     if not job.get("title") or not job.get("external_id"):
+                        src_skipped += 1
                         continue
                     is_new, _ = _upsert_job(job)
                     if is_new:
@@ -544,30 +545,37 @@ def sync_all_sources() -> dict:
                 source_stats.append({
                     "source": source_name,
                     "fetched": len(jobs),
-                    "new": src_new,
+                    "inserted": src_new,
                     "updated": src_updated,
+                    "skipped": src_skipped,
                 })
                 total_new += src_new
                 total_updated += src_updated
+                total_skipped += src_skipped
                 logger.info(
-                    "Source [%s]: fetched=%d new=%d updated=%d",
-                    source_name, len(jobs), src_new, src_updated,
+                    "Source [%s]: fetched=%d inserted=%d updated=%d skipped=%d",
+                    source_name, len(jobs), src_new, src_updated, src_skipped,
                 )
             except Exception as exc:
-                logger.error("Source [%s] sync error: %s", source_name, exc)
-                source_stats.append({"source": source_name, "error": str(exc)})
+                logger.error("Source [%s] sync error: %s", source_name, exc, exc_info=True)
+                source_stats.append({"source": source_name, "error": str(exc),
+                                     "fetched": 0, "inserted": 0, "updated": 0, "skipped": 0})
                 total_errors += 1
 
     result = {
-        "total_new": total_new,
-        "total_updated": total_updated,
-        "total_errors": total_errors,
+        "total_new": total_new,       # alias kept for backwards compat
+        "inserted": total_new,
+        "updated": total_updated,
+        "duplicates_skipped": total_skipped,
+        "errors": total_errors,
         "sources": source_stats,
         "synced_at": datetime.utcnow().isoformat(),
     }
     _log_discovery_run("remote_job_sync", "success", json.dumps(result))
-    logger.info("Remote job sync complete: new=%d updated=%d errors=%d",
-                total_new, total_updated, total_errors)
+    logger.info(
+        "Remote job sync complete: inserted=%d updated=%d skipped=%d errors=%d",
+        total_new, total_updated, total_skipped, total_errors,
+    )
     return result
 
 

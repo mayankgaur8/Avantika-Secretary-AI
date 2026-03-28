@@ -648,25 +648,53 @@ function switchTab(name, btn) {
 }
 
 // ── Sync ────────────────────────────────────────────────────────────────────
-function syncJobs() {
+async function syncJobs() {
   const btn = document.getElementById('syncBtn');
   const icon = document.getElementById('syncIcon');
-  if (btn) { btn.disabled = true; }
-  if (icon) { icon.classList.add('spinning'); }
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Syncing…'; }
   showToast('Syncing remote jobs from all sources…', 'info');
 
-  fetch('/api/remote-jobs/sync', { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      const msg = `Sync complete: ${data.total_new || 0} new jobs added.`;
-      showToast(msg, 'success');
-      setTimeout(() => location.reload(), 800);
-    })
-    .catch(err => {
-      showToast('Sync failed: ' + err.message, 'error');
-      if (btn) { btn.disabled = false; }
-      if (icon) { icon.classList.remove('spinning'); }
-    });
+  try {
+    const r = await fetch('/api/remote-jobs/sync', { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${r.status}`);
+    }
+    const data = await r.json();
+
+    // Build a detailed summary line
+    const inserted  = data.inserted  ?? data.total_new      ?? 0;
+    const updated   = data.updated   ?? data.total_updated  ?? 0;
+    const skipped   = data.duplicates_skipped               ?? 0;
+    const errors    = data.errors    ?? data.total_errors   ?? 0;
+    const alerts    = data.new_alerts                       ?? 0;
+
+    // Per-source breakdown (shown in console and secondary toast)
+    const sources = (data.sources || []);
+    const srcLines = sources.map(s =>
+      s.error
+        ? `  ${s.source}: ERROR — ${s.error}`
+        : `  ${s.source}: ${s.inserted ?? s.new ?? 0} new, ${s.updated ?? 0} updated`
+    );
+    if (srcLines.length) {
+      console.info('Sync breakdown:\n' + srcLines.join('\n'));
+    }
+
+    // Primary toast
+    let msg = `Sync complete: ${inserted} new job${inserted !== 1 ? 's' : ''} added`;
+    if (updated > 0)  msg += `, ${updated} refreshed`;
+    if (skipped > 0)  msg += `, ${skipped} skipped`;
+    if (errors  > 0)  msg += ` (${errors} source error${errors !== 1 ? 's' : ''})`;
+    if (alerts  > 0)  msg += ` — ${alerts} new alert${alerts !== 1 ? 's' : ''}!`;
+    showToast(msg, errors > 0 ? 'warning' : 'success');
+
+    // Verify pipeline is populated: reload after short delay so user sees toast
+    setTimeout(() => location.reload(), 1000);
+
+  } catch (err) {
+    showToast('Sync failed: ' + err.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span id="syncIcon">⟳</span> Sync Now'; }
+  }
 }
 
 // ── Save ────────────────────────────────────────────────────────────────────
