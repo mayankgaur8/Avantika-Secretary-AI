@@ -976,6 +976,7 @@ def remote_jobs_page(
     sort_by: str = "relevance",
     page: int = 1,
 ):
+    ctx = _base_ctx(request)
     filters = dict(
         source=source or None,
         job_type=job_type or None,
@@ -995,57 +996,38 @@ def remote_jobs_page(
         travel_widget = get_travel_widget()
         applied = list_applied_jobs(limit=30)
     except Exception as exc:
-        result = {"jobs": [], "total": 0, "page": 1, "pages": 1}
+        logger.error("Remote jobs page error: %s", exc)
+        result = {"jobs": [], "total": 0, "page": 1, "pages": 1, "per_page": 24}
         stats = {"total": 0, "saved": 0, "applied": 0, "high_match": 0,
                  "europe_friendly": 0, "last_sync": None}
         travel_widget = []
         applied = []
 
-    # sidebar context
-    pipeline_summary = None
-    try:
-        from app.services.pipeline import get_pipeline_summary
-        pipeline_summary = get_pipeline_summary()
-    except Exception:
-        pass
-    jobs_to_review = count_pending_review()
-    try:
-        from app.services.reminders import list_reminders
-        reminders_due = len([r for r in list_reminders() if r.get("status") == "pending"])
-    except Exception:
-        reminders_due = 0
-
-    return templates.TemplateResponse(
-        "remote_jobs.html",
-        {
-            "request": request,
-            "active_page": "remote_jobs",
-            "jobs": result["jobs"],
-            "pagination": {
-                "total": result["total"],
-                "page": result["page"],
-                "pages": result["pages"],
-                "per_page": result["per_page"],
-            },
-            "stats": stats,
-            "travel_widget": travel_widget,
-            "applied_jobs": applied,
-            "filters": {
-                "source": source,
-                "job_type": job_type,
-                "remote_type": remote_type,
-                "europe_only": europe_only,
-                "min_score": min_score,
-                "status": status,
-                "saved_only": saved_only,
-                "search": search,
-                "sort_by": sort_by,
-            },
-            "pipeline_summary": pipeline_summary,
-            "jobs_to_review": jobs_to_review,
-            "reminders_due": reminders_due,
+    ctx.update({
+        "active_page": "remote_jobs",
+        "jobs": result["jobs"],
+        "pagination": {
+            "total": result["total"],
+            "page": result["page"],
+            "pages": result["pages"],
+            "per_page": result["per_page"],
         },
-    )
+        "stats": stats,
+        "travel_widget": travel_widget,
+        "applied_jobs": applied,
+        "filters": {
+            "source": source,
+            "job_type": job_type,
+            "remote_type": remote_type,
+            "europe_only": europe_only,
+            "min_score": min_score,
+            "status": status,
+            "saved_only": saved_only,
+            "search": search,
+            "sort_by": sort_by,
+        },
+    })
+    return templates.TemplateResponse(request, "remote_jobs.html", ctx)
 
 
 @app.get("/api/remote-jobs")
@@ -1182,6 +1164,7 @@ class RecordApplyPayload(BaseModel):
 
 @app.get("/apply-pipeline", response_class=HTMLResponse)
 def apply_pipeline_page(request: Request):
+    ctx = _base_ctx(request)
     try:
         kanban = get_pipeline_kanban()
         daily = get_daily_actions(10)
@@ -1198,39 +1181,19 @@ def apply_pipeline_page(request: Request):
         alert_count = 0
         insights = {}
 
-    # sidebar context
-    pipeline_summary = None
-    try:
-        from app.services.pipeline import get_pipeline_summary
-        pipeline_summary = get_pipeline_summary()
-    except Exception:
-        pass
-    jobs_to_review = count_pending_review()
-    try:
-        from app.services.reminders import list_reminders
-        reminders_due = len([r for r in list_reminders() if r.get("status") == "pending"])
-    except Exception:
-        reminders_due = 0
-
-    return templates.TemplateResponse(
-        "apply_pipeline.html",
-        {
-            "request": request,
-            "active_page": "apply_pipeline",
-            "kanban": kanban,
-            "daily_actions": daily,
-            "funnel": funnel,
-            "alerts": alerts,
-            "alert_count": alert_count,
-            "insights": insights,
-            "pipeline_stages": PIPELINE_STAGES,
-            "stage_colors": STAGE_COLORS,
-            "stage_labels": STAGE_LABELS,
-            "pipeline_summary": pipeline_summary,
-            "jobs_to_review": jobs_to_review,
-            "reminders_due": reminders_due,
-        },
-    )
+    ctx.update({
+        "active_page": "apply_pipeline",
+        "kanban": kanban,
+        "daily_actions": daily,
+        "funnel": funnel,
+        "alerts": alerts,
+        "alert_count": alert_count,
+        "insights": insights,
+        "pipeline_stages": PIPELINE_STAGES,
+        "stage_colors": STAGE_COLORS,
+        "stage_labels": STAGE_LABELS,
+    })
+    return templates.TemplateResponse(request, "apply_pipeline.html", ctx)
 
 
 @app.get("/api/apply-pipeline/kanban")
@@ -1335,26 +1298,22 @@ class AddOutreachCompanyPayload(BaseModel):
 
 @app.get("/client-outreach", response_class=HTMLResponse)
 def page_client_outreach(request: Request):
-    user = get_user()
+    ctx = _base_ctx(request)
     stats = get_revenue_stats()
     daily_plan = ca_get_daily_plan(10)
     companies_data = ca_list_companies(page=1, per_page=20)
     templates_data = ca_get_templates()
     insights = ca_get_learning_insights()
-    return templates.TemplateResponse(
-        "client_outreach.html",
-        {
-            "request": request,
-            "user": user,
-            "active_page": "client_outreach",
-            "stats": stats,
-            "daily_plan": daily_plan,
-            "companies": companies_data["companies"],
-            "companies_total": companies_data["total"],
-            "templates_data": templates_data,
-            "insights": insights,
-        },
-    )
+    ctx.update({
+        "active_page": "client_outreach",
+        "stats": stats,
+        "daily_plan": daily_plan,
+        "companies": companies_data["companies"],
+        "companies_total": companies_data["total"],
+        "templates_data": templates_data,
+        "insights": insights,
+    })
+    return templates.TemplateResponse(request, "client_outreach.html", ctx)
 
 
 @app.post("/api/outreach/discover")
