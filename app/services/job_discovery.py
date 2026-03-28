@@ -25,6 +25,11 @@ from app.services.platform_ai import call as ai_call
 
 logger = logging.getLogger("secretaryai.job_discovery")
 
+_DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json",
+}
+
 # ─── Candidate Profile ────────────────────────────────────────────────────────
 
 MY_PROFILE = {
@@ -226,7 +231,29 @@ def _estimated_monthly_eur(job: dict) -> int | None:
 
 # ─── Source fetchers ──────────────────────────────────────────────────────────
 
-def _fetch_remotive(client: httpx.Client) -> list[dict]:
+def _empty_fetch_result(source: str, url: str, error: str | None = None) -> dict[str, Any]:
+    return {
+        "source": source,
+        "url": url,
+        "status_code": None,
+        "response_length": 0,
+        "json_keys": [],
+        "fetched_count": 0,
+        "parsed_count": 0,
+        "jobs": [],
+        "error": error,
+    }
+
+
+def _parse_json_object(resp: httpx.Response, source: str) -> dict[str, Any]:
+    data = resp.json()
+    if not isinstance(data, dict):
+        raise ValueError(f"{source} response JSON was not an object")
+    logger.info("%s JSON keys: %s", source, sorted(data.keys()))
+    return data
+
+
+def _fetch_remotive(client: httpx.Client) -> dict[str, Any]:
     """
     Remotive public API — free, no auth required.
     https://remotive.com/api/remote-jobs?category=software-dev&search=java&limit=100
@@ -236,14 +263,22 @@ def _fetch_remotive(client: httpx.Client) -> list[dict]:
         "search": "java spring backend",
         "limit": 100,
     }
+    url = "https://remotive.com/api/remote-jobs"
+    logger.info("Fetching from Remotive...")
+    logger.info("API URL: %s", url)
     try:
-        resp = client.get("https://remotive.com/api/remote-jobs", params=params, timeout=20)
+        resp = client.get(url, params=params, timeout=20, headers=_DEFAULT_HEADERS)
+        logger.info("Status: %s", resp.status_code)
+        logger.info("Response length: %d", len(resp.text))
         resp.raise_for_status()
-        jobs = resp.json().get("jobs", [])
-        logger.info("Remotive: fetched %d jobs", len(jobs))
+        data = _parse_json_object(resp, "Remotive")
+        jobs = data.get("jobs")
+        if not isinstance(jobs, list):
+            raise ValueError("Remotive response missing 'jobs' array")
+        logger.info("Jobs fetched: %d", len(jobs))
     except Exception as exc:
-        logger.error("Remotive fetch failed: %s", exc)
-        return []
+        logger.error("Fetch failed", exc_info=True)
+        return _empty_fetch_result("remotive", url, str(exc))
 
     results = []
     for j in jobs:
@@ -276,10 +311,21 @@ def _fetch_remotive(client: httpx.Client) -> list[dict]:
             "tags": tags,
             "posted_at": j.get("publication_date"),
         })
-    return results
+    logger.info("Jobs parsed: %d", len(results))
+    return {
+        "source": "remotive",
+        "url": str(resp.request.url),
+        "status_code": resp.status_code,
+        "response_length": len(resp.text),
+        "json_keys": sorted(data.keys()),
+        "fetched_count": len(jobs),
+        "parsed_count": len(results),
+        "jobs": results,
+        "error": None,
+    }
 
 
-def _fetch_adzuna(client: httpx.Client) -> list[dict]:
+def _fetch_adzuna(client: httpx.Client) -> dict[str, Any]:
     """
     Adzuna Developer API — requires ADZUNA_APP_ID + ADZUNA_APP_KEY.
     Searches GB + DE for Java/Spring remote jobs.
@@ -288,9 +334,13 @@ def _fetch_adzuna(client: httpx.Client) -> list[dict]:
     app_key = os.getenv("ADZUNA_APP_KEY")
     if not app_id or not app_key:
         logger.debug("Adzuna skipped: ADZUNA_APP_ID / ADZUNA_APP_KEY not set")
-        return []
+        return _empty_fetch_result("adzuna", "https://api.adzuna.com/", "Missing Adzuna credentials")
 
     results: list[dict] = []
+    total_fetched = 0
+    statuses: list[int] = []
+    response_lengths: list[int] = []
+    json_keys_seen: set[str] = set()
     for country_code in ("gb", "de", "nl", "ie"):
         url = f"https://api.adzuna.com/v1/api/jobs/{country_code}/search/1"
         params = {
@@ -303,12 +353,23 @@ def _fetch_adzuna(client: httpx.Client) -> list[dict]:
             "sort_by": "date",
         }
         try:
-            resp = client.get(url, params=params, timeout=20)
+            logger.info("Fetching from Adzuna [%s]...", country_code)
+            logger.info("API URL: %s", url)
+            resp = client.get(url, params=params, timeout=20, headers=_DEFAULT_HEADERS)
+            logger.info("Status: %s", resp.status_code)
+            logger.info("Response length: %d", len(resp.text))
             resp.raise_for_status()
-            raw_results = resp.json().get("results", [])
-            logger.info("Adzuna [%s]: fetched %d jobs", country_code, len(raw_results))
+            data = _parse_json_object(resp, f"Adzuna [{country_code}]")
+            raw_results = data.get("results")
+            if not isinstance(raw_results, list):
+                raise ValueError(f"Adzuna [{country_code}] response missing 'results' array")
+            logger.info("Jobs fetched: %d", len(raw_results))
+            total_fetched += len(raw_results)
+            statuses.append(resp.status_code)
+            response_lengths.append(len(resp.text))
+            json_keys_seen.update(data.keys())
         except Exception as exc:
-            logger.error("Adzuna [%s] fetch failed: %s", country_code, exc)
+            logger.error("Fetch failed", exc_info=True)
             continue
 
         for j in raw_results:
@@ -332,10 +393,21 @@ def _fetch_adzuna(client: httpx.Client) -> list[dict]:
                 "tags": json.dumps([]),
                 "posted_at": j.get("created"),
             })
-    return results
+    logger.info("Jobs parsed: %d", len(results))
+    return {
+        "source": "adzuna",
+        "url": "https://api.adzuna.com/v1/api/jobs/{country}/search/1",
+        "status_code": statuses[-1] if statuses else None,
+        "response_length": sum(response_lengths),
+        "json_keys": sorted(json_keys_seen),
+        "fetched_count": total_fetched,
+        "parsed_count": len(results),
+        "jobs": results,
+        "error": None if statuses else "No Adzuna responses succeeded",
+    }
 
 
-def _fetch_jsearch(client: httpx.Client) -> list[dict]:
+def _fetch_jsearch(client: httpx.Client) -> dict[str, Any]:
     """
     JSearch via RapidAPI — requires RAPIDAPI_KEY.
     Returns remote Java/Spring contract jobs globally.
@@ -343,7 +415,7 @@ def _fetch_jsearch(client: httpx.Client) -> list[dict]:
     api_key = os.getenv("RAPIDAPI_KEY")
     if not api_key:
         logger.debug("JSearch skipped: RAPIDAPI_KEY not set")
-        return []
+        return _empty_fetch_result("jsearch", "https://jsearch.p.rapidapi.com/search", "Missing RapidAPI key")
 
     queries = [
         "java spring boot remote contract",
@@ -352,9 +424,14 @@ def _fetch_jsearch(client: httpx.Client) -> list[dict]:
     ]
     results: list[dict] = []
     headers = {
+        **_DEFAULT_HEADERS,
         "X-RapidAPI-Key": api_key,
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
     }
+    total_fetched = 0
+    statuses: list[int] = []
+    response_lengths: list[int] = []
+    json_keys_seen: set[str] = set()
     for query in queries:
         params = {
             "query": query,
@@ -364,17 +441,28 @@ def _fetch_jsearch(client: httpx.Client) -> list[dict]:
             "remote_jobs_only": "true",
         }
         try:
+            logger.info("Fetching from JSearch [%s]...", query)
+            logger.info("API URL: %s", "https://jsearch.p.rapidapi.com/search")
             resp = client.get(
                 "https://jsearch.p.rapidapi.com/search",
                 params=params,
                 headers=headers,
                 timeout=20,
             )
+            logger.info("Status: %s", resp.status_code)
+            logger.info("Response length: %d", len(resp.text))
             resp.raise_for_status()
-            data = resp.json().get("data", [])
-            logger.info("JSearch [%s]: fetched %d jobs", query, len(data))
+            payload = _parse_json_object(resp, f"JSearch [{query}]")
+            data = payload.get("data")
+            if not isinstance(data, list):
+                raise ValueError(f"JSearch [{query}] response missing 'data' array")
+            logger.info("Jobs fetched: %d", len(data))
+            total_fetched += len(data)
+            statuses.append(resp.status_code)
+            response_lengths.append(len(resp.text))
+            json_keys_seen.update(payload.keys())
         except Exception as exc:
-            logger.error("JSearch [%s] failed: %s", query, exc)
+            logger.error("Fetch failed", exc_info=True)
             continue
 
         for j in data:
@@ -410,7 +498,18 @@ def _fetch_jsearch(client: httpx.Client) -> list[dict]:
                 "tags": json.dumps(j.get("job_required_skills") or []),
                 "posted_at": j.get("job_posted_at_datetime_utc"),
             })
-    return results
+    logger.info("Jobs parsed: %d", len(results))
+    return {
+        "source": "jsearch",
+        "url": "https://jsearch.p.rapidapi.com/search",
+        "status_code": statuses[-1] if statuses else None,
+        "response_length": sum(response_lengths),
+        "json_keys": sorted(json_keys_seen),
+        "fetched_count": total_fetched,
+        "parsed_count": len(results),
+        "jobs": results,
+        "error": None if statuses else "No JSearch responses succeeded",
+    }
 
 
 # ─── Normalisation helpers ────────────────────────────────────────────────────
@@ -531,7 +630,8 @@ def sync_all_sources() -> dict:
         ]
         for source_name, fetcher in sources:
             try:
-                jobs = fetcher(client)
+                fetch_result = fetcher(client)
+                jobs = fetch_result.get("jobs", [])
                 src_new = src_updated = src_skipped = 0
                 for job in jobs:
                     if not job.get("title") or not job.get("external_id"):
@@ -544,17 +644,31 @@ def sync_all_sources() -> dict:
                         src_updated += 1
                 source_stats.append({
                     "source": source_name,
-                    "fetched": len(jobs),
+                    "url": fetch_result.get("url"),
+                    "status_code": fetch_result.get("status_code"),
+                    "response_length": fetch_result.get("response_length", 0),
+                    "json_keys": fetch_result.get("json_keys", []),
+                    "fetched": fetch_result.get("fetched_count", 0),
+                    "parsed_jobs": fetch_result.get("parsed_count", len(jobs)),
                     "inserted": src_new,
                     "updated": src_updated,
                     "skipped": src_skipped,
+                    "error": fetch_result.get("error"),
                 })
+                if fetch_result.get("error"):
+                    total_errors += 1
                 total_new += src_new
                 total_updated += src_updated
                 total_skipped += src_skipped
                 logger.info(
-                    "Source [%s]: fetched=%d inserted=%d updated=%d skipped=%d",
-                    source_name, len(jobs), src_new, src_updated, src_skipped,
+                    "Source [%s]: fetched=%d parsed=%d inserted=%d updated=%d skipped=%d error=%s",
+                    source_name,
+                    fetch_result.get("fetched_count", 0),
+                    fetch_result.get("parsed_count", len(jobs)),
+                    src_new,
+                    src_updated,
+                    src_skipped,
+                    fetch_result.get("error"),
                 )
             except Exception as exc:
                 logger.error("Source [%s] sync error: %s", source_name, exc, exc_info=True)

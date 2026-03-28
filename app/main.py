@@ -11,6 +11,7 @@ logger = logging.getLogger("secretaryai.main")
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
+import httpx
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -1066,6 +1067,43 @@ def api_money_feed():
 @app.get("/api/remote-jobs/tracker")
 def api_applied_tracker():
     return list_applied_jobs()
+
+
+@app.get("/test-remotive")
+def test_remotive():
+    url = "https://remotive.com/api/remote-jobs"
+    try:
+        resp = httpx.get(
+            url,
+            timeout=20,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+            },
+        )
+        logger.info("Test Remotive URL: %s", url)
+        logger.info("Test Remotive status: %s", resp.status_code)
+        logger.info("Test Remotive response length: %d", len(resp.text))
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise ValueError("Remotive test response JSON was not an object")
+        logger.info("Test Remotive JSON keys: %s", sorted(data.keys()))
+        jobs = data.get("jobs")
+        if not isinstance(jobs, list):
+            raise ValueError("Remotive test response missing 'jobs' array")
+        logger.info("Test Remotive jobs parsed: %d", len(jobs))
+        return {
+            "url": url,
+            "status_code": resp.status_code,
+            "response_length": len(resp.text),
+            "json_keys": sorted(data.keys()),
+            "jobs_count": len(jobs),
+            "body": data,
+        }
+    except Exception as exc:
+        logger.error("Test Remotive failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── List route (exact match, no path segment after /remote-jobs) ──
