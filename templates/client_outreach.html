@@ -1,0 +1,910 @@
+{% extends "base.html" %}
+{% block title %}Client Outreach — Avantika SecretaryAI{% endblock %}
+
+{% block page_title %}Client Outreach{% endblock %}
+{% block page_subtitle %}Revenue Pipeline — Solution-Provider Mode{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-ghost btn-sm" onclick="runDiscover()" id="discoverBtn">
+  <span>⊕</span> Find Targets
+</button>
+<button class="btn btn-primary btn-sm" onclick="openAddModal()">
+  <span>+</span> Add Company
+</button>
+{% endblock %}
+
+{% block head %}
+<style>
+/* ── Revenue Stats Bar ── */
+.rev-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px; }
+.rev-stat { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; }
+.rev-stat-value { font-size:1.6rem; font-weight:800; color:var(--accent); line-height:1; }
+.rev-stat-label { font-size:0.7rem; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:.05em; }
+.rev-stat-sub { font-size:0.75rem; color:var(--text-secondary); margin-top:6px; }
+.rev-stat.green .rev-stat-value { color:#10b981; }
+.rev-stat.amber .rev-stat-value { color:#f59e0b; }
+.rev-stat.purple .rev-stat-value { color:#a855f7; }
+
+/* ── Two-column layout ── */
+.outreach-grid { display:grid; grid-template-columns:1fr 340px; gap:20px; align-items:start; }
+@media (max-width:900px) { .outreach-grid { grid-template-columns:1fr; } }
+
+/* ── Section cards ── */
+.section-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:20px; }
+.section-header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border); }
+.section-title { font-size:0.85rem; font-weight:700; letter-spacing:.04em; color:var(--text-primary); }
+.section-badge { background:var(--accent); color:#fff; border-radius:99px; padding:2px 8px; font-size:0.7rem; font-weight:700; }
+
+/* ── Daily Plan ── */
+.plan-item { display:flex; gap:14px; padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .15s; }
+.plan-item:last-child { border-bottom:none; }
+.plan-item:hover { background:var(--surface-hover); }
+.plan-rank { width:28px; height:28px; border-radius:8px; background:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:0.75rem; color:#fff; flex-shrink:0; }
+.plan-rank.high { background:#10b981; }
+.plan-rank.med { background:#f59e0b; }
+.plan-body { flex:1; min-width:0; }
+.plan-name { font-weight:700; font-size:0.85rem; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.plan-rev { font-size:0.72rem; color:#10b981; font-weight:600; }
+.plan-reasons { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+.plan-reason { background:rgba(99,102,241,.12); color:#818cf8; border-radius:4px; padding:2px 6px; font-size:0.67rem; }
+.plan-actions { display:flex; gap:6px; align-items:center; flex-shrink:0; }
+.plan-tech { display:flex; gap:3px; flex-wrap:wrap; }
+.tech-chip { background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:0.65rem; color:var(--text-muted); }
+
+/* ── Companies Table ── */
+.companies-filters { display:flex; gap:10px; padding:12px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.companies-table { width:100%; border-collapse:collapse; }
+.companies-table th { padding:10px 14px; font-size:0.7rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:600; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+.companies-table td { padding:11px 14px; border-bottom:1px solid var(--border); font-size:0.8rem; color:var(--text-secondary); vertical-align:middle; }
+.companies-table tr:last-child td { border-bottom:none; }
+.companies-table tr:hover td { background:var(--surface-hover); }
+.company-name-cell { font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px; }
+.status-dot { width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.status-dot.active { background:#10b981; }
+.status-dot.idle { background:#f59e0b; }
+.status-dot.new { background:#6366f1; }
+.revenue-cell { color:#10b981; font-weight:700; }
+.stage-badge { border-radius:6px; padding:3px 8px; font-size:0.68rem; font-weight:700; }
+.stage-new { background:rgba(99,102,241,.15); color:#818cf8; }
+.stage-contacted { background:rgba(245,158,11,.15); color:#f59e0b; }
+.stage-responded { background:rgba(16,185,129,.15); color:#10b981; }
+.stage-converted { background:rgba(234,179,8,.15); color:#eab308; }
+
+/* ── Message History Panel ── */
+.msg-thread { padding:14px 18px; }
+.msg-item { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+.msg-meta { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.msg-type { font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+.msg-type.linkedin_dm { color:#6366f1; }
+.msg-type.email_pitch { color:#06b6d4; }
+.msg-type.hook_message { color:#f59e0b; }
+.msg-type.follow_up { color:#a855f7; }
+.msg-score { font-size:0.7rem; color:var(--text-muted); }
+.msg-score.high { color:#10b981; }
+.msg-content-preview { font-size:0.78rem; color:var(--text-secondary); line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.msg-status-row { display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap; }
+.msg-status-badge { border-radius:4px; padding:2px 7px; font-size:0.67rem; font-weight:700; }
+.msg-status-badge.draft { background:rgba(92,97,128,.2); color:#9ca3af; }
+.msg-status-badge.sent { background:rgba(6,182,212,.15); color:#06b6d4; }
+.msg-status-badge.responded { background:rgba(16,185,129,.15); color:#10b981; }
+.msg-status-badge.converted { background:rgba(234,179,8,.15); color:#eab308; }
+.empty-state { text-align:center; padding:40px 20px; color:var(--text-muted); font-size:0.82rem; }
+
+/* ── Insight Chips ── */
+.insights-list { padding:14px 18px; display:flex; flex-direction:column; gap:8px; }
+.insight-item { display:flex; gap:10px; align-items:flex-start; font-size:0.78rem; color:var(--text-secondary); line-height:1.5; }
+.insight-icon { font-size:1rem; flex-shrink:0; margin-top:1px; }
+
+/* ── Templates ── */
+.template-list { padding:14px 18px; display:flex; flex-direction:column; gap:8px; }
+.template-item { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:12px; }
+.template-stats { display:flex; gap:10px; margin-left:auto; font-size:0.7rem; color:var(--text-muted); }
+.template-stat-val { font-weight:700; color:var(--text-primary); }
+
+/* ── Modals ── */
+.gen-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:1000; display:none; align-items:center; justify-content:center; padding:16px; }
+.gen-modal-overlay.open { display:flex; }
+.gen-modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:100%; max-width:620px; max-height:85vh; display:flex; flex-direction:column; }
+.gen-modal-header { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); }
+.gen-modal-title { font-weight:800; font-size:1rem; }
+.gen-modal-body { padding:20px; overflow-y:auto; flex:1; }
+.gen-modal-footer { padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; }
+.type-tabs { display:flex; gap:6px; margin-bottom:16px; }
+.type-tab { padding:6px 14px; border-radius:8px; font-size:0.78rem; font-weight:600; cursor:pointer; border:1px solid var(--border); background:transparent; color:var(--text-secondary); transition:all .15s; }
+.type-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.generated-output { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; min-height:100px; font-size:0.8rem; color:var(--text-primary); line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+.score-bar { display:flex; align-items:center; gap:10px; margin:10px 0; font-size:0.75rem; color:var(--text-muted); }
+.score-fill { height:4px; border-radius:2px; background:var(--accent); flex-shrink:0; }
+
+/* ── Add company form ── */
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media (max-width:480px) { .form-row { grid-template-columns:1fr; } }
+.form-group { margin-bottom:12px; }
+.form-label { display:block; font-size:0.75rem; font-weight:600; color:var(--text-secondary); margin-bottom:5px; }
+.form-input,.form-select,.form-textarea { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:0.82rem; color:var(--text-primary); outline:none; box-sizing:border-box; }
+.form-input:focus,.form-select:focus,.form-textarea:focus { border-color:var(--accent); }
+.form-textarea { resize:vertical; min-height:60px; }
+
+/* Responsive */
+@media (max-width:600px) {
+  .rev-stats { grid-template-columns:repeat(2,1fr); }
+  .companies-table { font-size:0.72rem; }
+  .companies-table td, .companies-table th { padding:8px 8px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Revenue Stats ── -->
+<div class="rev-stats">
+  {% set t = stats.totals or {} %}
+  <div class="rev-stat">
+    <div class="rev-stat-value" id="statPipeline">
+      €{{ "{:,}".format((t.total_pipeline_eur or 0)|int) }}
+    </div>
+    <div class="rev-stat-label">Pipeline Value</div>
+    <div class="rev-stat-sub">{{ t.companies_in_pipeline or 0 }} companies tracked</div>
+  </div>
+  <div class="rev-stat green">
+    <div class="rev-stat-value" id="statSent">{{ t.total_sent or 0 }}</div>
+    <div class="rev-stat-label">Messages Sent</div>
+    <div class="rev-stat-sub">{{ t.messages_sent or 0 }} generated total</div>
+  </div>
+  <div class="rev-stat amber">
+    <div class="rev-stat-value" id="statRate">{{ t.response_rate or 0 }}%</div>
+    <div class="rev-stat-label">Response Rate</div>
+    <div class="rev-stat-sub">{{ t.positive_responses or 0 }} positive replies</div>
+  </div>
+  <div class="rev-stat purple">
+    <div class="rev-stat-value" id="statWon">
+      {% if t.revenue_won and t.revenue_won > 0 %}€{{ "{:,}".format(t.revenue_won|int) }}{% else %}—{% endif %}
+    </div>
+    <div class="rev-stat-label">Revenue Won</div>
+    <div class="rev-stat-sub">{{ t.conversions or 0 }} contracts closed</div>
+  </div>
+</div>
+
+<div class="outreach-grid">
+
+  <!-- LEFT COLUMN -->
+  <div>
+
+    <!-- Daily Outreach Plan -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">⚡ Today's Outreach Plan</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="section-badge" id="planCount">{{ daily_plan|length }}</span>
+          <button class="btn btn-ghost btn-sm" onclick="refreshPlan()">Refresh</button>
+        </div>
+      </div>
+      <div id="planList">
+        {% if daily_plan %}
+          {% for c in daily_plan %}
+          <div class="plan-item" onclick="openGenModal({{ c.id }}, '{{ c.name|replace("'","\\'")|e }}')" title="Click to generate outreach">
+            <div class="plan-rank {% if loop.index <= 3 %}high{% elif loop.index <= 6 %}med{% endif %}">{{ loop.index }}</div>
+            <div class="plan-body">
+              <div class="plan-name">{{ c.name }}</div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                {% if c.revenue_potential %}
+                <span class="plan-rev">€{{ "{:,}".format(c.revenue_potential) }} est.</span>
+                {% endif %}
+                {% if c.company_size and c.company_size != 'unknown' %}
+                <span style="font-size:0.7rem;color:var(--text-muted);">{{ c.company_size }}</span>
+                {% endif %}
+              </div>
+              {% if c.contact_reasons %}
+              <div class="plan-reasons">
+                {% for r in c.contact_reasons %}
+                <span class="plan-reason">{{ r }}</span>
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% if c.tech_list %}
+              <div class="plan-tech" style="margin-top:5px;">
+                {% for t in c.tech_list[:4] %}
+                <span class="tech-chip">{{ t }}</span>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            <div class="plan-actions">
+              <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openGenModal({{ c.id }}, '{{ c.name|replace("'","\\'")|e }}')" style="white-space:nowrap;">✦ Generate</button>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">
+            <div style="font-size:2rem;margin-bottom:8px;">🎯</div>
+            <div style="font-weight:600;margin-bottom:6px;">No companies in your pipeline yet</div>
+            <div>Click <strong>Find Targets</strong> to discover companies from your job data, or add one manually.</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Companies Table -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">◈ All Companies</span>
+        <span class="section-badge" id="companiesCount">{{ companies_total or companies|length }}</span>
+      </div>
+      <div class="companies-filters">
+        <input type="text" class="form-input" placeholder="Search companies..." id="companySearch"
+          oninput="debounceSearch(this.value)" style="max-width:220px;">
+        <select class="form-select" id="companySortBy" onchange="loadCompanies()" style="max-width:150px;">
+          <option value="revenue">Sort: Revenue</option>
+          <option value="newest">Sort: Newest</option>
+          <option value="name">Sort: Name</option>
+          <option value="activity">Sort: Activity</option>
+        </select>
+      </div>
+      <div id="companiesTableWrap" style="overflow-x:auto;">
+        <table class="companies-table">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Revenue Est.</th>
+              <th>Tech</th>
+              <th>Status</th>
+              <th>Sent</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="companiesTbody">
+            {% for c in companies %}
+            <tr>
+              <td>
+                <div class="company-name-cell">
+                  <span class="status-dot {% if c.messages_sent and c.messages_sent > 0 %}active{% elif c.last_sent_at %}idle{% else %}new{% endif %}"></span>
+                  {{ c.name }}
+                </div>
+                {% if c.hiring_signal %}
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">{{ c.hiring_signal[:60] }}</div>
+                {% endif %}
+              </td>
+              <td class="revenue-cell">
+                {% if c.revenue_potential %}€{{ "{:,}".format(c.revenue_potential) }}{% else %}—{% endif %}
+              </td>
+              <td>
+                {% if c.tech_list %}
+                  {% for t in c.tech_list[:3] %}
+                  <span class="tech-chip">{{ t }}</span>
+                  {% endfor %}
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <span class="stage-badge {% if c.wins and c.wins > 0 %}stage-converted{% elif c.total_sent and c.total_sent > 0 %}stage-contacted{% else %}stage-new{% endif %}">
+                  {% if c.wins and c.wins > 0 %}Converted{% elif c.total_sent and c.total_sent > 0 %}Contacted{% else %}New{% endif %}
+                </span>
+              </td>
+              <td>{{ c.total_sent or 0 }}</td>
+              <td>
+                <div style="display:flex;gap:6px;">
+                  <button class="btn btn-primary btn-sm" onclick="openGenModal({{ c.id }}, '{{ c.name|replace("'","\\'")|e }}')" title="Generate outreach">✦</button>
+                  <button class="btn btn-ghost btn-sm" onclick="viewMessages({{ c.id }}, '{{ c.name|replace("'","\\'")|e }}')" title="Message history">◎</button>
+                  <button class="btn btn-ghost btn-sm" onclick="deleteCompany({{ c.id }})" title="Remove" style="color:#ef4444;">✕</button>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="empty-state" style="padding:30px;">No companies yet — click Find Targets above.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /LEFT -->
+
+  <!-- RIGHT COLUMN -->
+  <div>
+
+    <!-- AI Learning Insights -->
+    <div class="section-card" style="margin-bottom:20px;">
+      <div class="section-header">
+        <span class="section-title">◎ AI Learning Insights</span>
+      </div>
+      <div class="insights-list" id="insightsList">
+        {% set lessons = insights.what_works or [] %}
+        {% if lessons %}
+          {% for lesson in lessons %}
+          <div class="insight-item">
+            <span class="insight-icon">◆</span>
+            <span>{{ lesson }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state" style="padding:16px 0;">Send your first outreach to start learning.</div>
+        {% endif %}
+      </div>
+      {% if insights.winning_hooks %}
+      <div style="border-top:1px solid var(--border);padding:12px 18px;">
+        <div style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Top Performing Messages</div>
+        {% for hook in insights.winning_hooks[:2] %}
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;">
+          <div style="font-size:0.68rem;color:#10b981;font-weight:700;margin-bottom:4px;">{{ hook.company }} — {{ hook.message_type }}</div>
+          <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.4;">{{ hook.content[:120] }}{% if hook.content|length > 120 %}…{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Templates Library -->
+    <div class="section-card" style="margin-bottom:20px;">
+      <div class="section-header">
+        <span class="section-title">⊞ Message Templates</span>
+      </div>
+      <div class="template-list">
+        {% if templates_data %}
+          {% for tmpl in templates_data %}
+          <div class="template-item">
+            <div>
+              <div style="font-size:0.8rem;font-weight:700;color:var(--text-primary);">{{ tmpl.name }}</div>
+              <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">{{ tmpl.template_type }}</div>
+            </div>
+            <div class="template-stats">
+              <div><span class="template-stat-val">{{ tmpl.use_count or 0 }}</span><br>used</div>
+              <div><span class="template-stat-val" style="color:#10b981;">{{ tmpl.response_count or 0 }}</span><br>resp</div>
+              <div><span class="template-stat-val" style="color:#eab308;">{{ tmpl.conversion_count or 0 }}</span><br>conv</div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state" style="padding:16px 0;">No templates yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Type Breakdown -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">▣ By Message Type</span>
+      </div>
+      <div style="padding:14px 18px;">
+        {% set by_type = stats.by_type or [] %}
+        {% if by_type %}
+          {% for row in by_type %}
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:4px;">
+              <span style="font-weight:600;color:var(--text-primary);">{{ row.message_type|replace('_',' ')|title }}</span>
+              <span style="color:var(--text-muted);">{{ row.sent }} sent · {{ row.responses }} resp</span>
+            </div>
+            <div style="background:var(--border);border-radius:2px;height:4px;overflow:hidden;">
+              <div style="height:100%;background:var(--accent);width:{% if row.sent > 0 %}{{ [[(row.responses / row.sent * 100)|int, 0]|max, 100]|min }}%{% else %}0%{% endif %};"></div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state" style="padding:10px 0;">No messages sent yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div><!-- /RIGHT -->
+
+</div>
+
+<!-- ── Generate Outreach Modal ── -->
+<div class="gen-modal-overlay" id="genModal">
+  <div class="gen-modal">
+    <div class="gen-modal-header">
+      <div>
+        <div class="gen-modal-title" id="genModalCompany">Generate Outreach</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;" id="genModalSubtitle">AI-powered personalised messages</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeGenModal()">✕</button>
+    </div>
+    <div class="gen-modal-body">
+      <div class="type-tabs">
+        <button class="type-tab active" data-type="linkedin_dm" onclick="switchType('linkedin_dm',this)">LinkedIn DM</button>
+        <button class="type-tab" data-type="email_pitch" onclick="switchType('email_pitch',this)">Email Pitch</button>
+        <button class="type-tab" data-type="hook_message" onclick="switchType('hook_message',this)">Hook</button>
+        <button class="type-tab" data-type="follow_up" onclick="switchType('follow_up',this)">Follow-Up</button>
+      </div>
+
+      <div class="form-row" style="margin-bottom:12px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Contact Name (optional)</label>
+          <input type="text" class="form-input" id="genContactName" placeholder="e.g. Sarah Müller">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Contact Email (optional)</label>
+          <input type="email" class="form-input" id="genContactEmail" placeholder="sarah@company.com">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Extra Context (optional — any job/company notes)</label>
+        <textarea class="form-textarea" id="genExtraContext" placeholder="e.g. They just raised Series B, hiring 30 engineers..."></textarea>
+      </div>
+
+      <div id="genOutput" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:0.75rem;font-weight:700;color:var(--text-muted);">GENERATED MESSAGE</span>
+          <div style="display:flex;gap:6px;">
+            <span id="genScoreDisplay" style="font-size:0.72rem;color:var(--text-muted);"></span>
+            <button class="btn btn-ghost btn-sm" onclick="copyGenerated()" title="Copy">⊕ Copy</button>
+            <button class="btn btn-ghost btn-sm" onclick="regenMessage()" title="Regenerate">↺ Regen</button>
+          </div>
+        </div>
+        <div id="genSubject" style="display:none;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:0.8rem;font-weight:600;color:var(--text-primary);"></div>
+        <div class="generated-output" id="genContent"></div>
+        <div class="score-bar">
+          <span>Hook quality:</span>
+          <div style="flex:1;background:var(--border);border-radius:2px;height:4px;">
+            <div class="score-fill" id="genScoreFill" style="width:0%;"></div>
+          </div>
+          <span id="genScoreVal">0/100</span>
+        </div>
+        <div id="genMessageId" style="display:none;"></div>
+      </div>
+
+      <div id="genLoading" style="display:none;text-align:center;padding:30px;color:var(--text-muted);">
+        <div style="font-size:1.5rem;margin-bottom:8px;">◎</div>
+        <div>Generating personalised outreach…</div>
+      </div>
+    </div>
+    <div class="gen-modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeGenModal()">Cancel</button>
+      <button class="btn btn-ghost btn-sm" id="bundleBtn" onclick="generateBundle()" title="Generate all 3 types at once">⊞ Bundle All</button>
+      <button class="btn btn-primary btn-sm" onclick="generateOutreach()">✦ Generate</button>
+      <button class="btn btn-primary btn-sm" id="markSentBtn" style="display:none;background:#10b981;border-color:#10b981;" onclick="markAsSent()">✓ Mark Sent</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Message History Modal ── -->
+<div class="gen-modal-overlay" id="msgHistModal">
+  <div class="gen-modal">
+    <div class="gen-modal-header">
+      <div>
+        <div class="gen-modal-title" id="msgHistTitle">Message History</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeMsgHist()">✕</button>
+    </div>
+    <div class="gen-modal-body" id="msgHistBody" style="padding:0;">
+      <div class="empty-state">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Company Modal ── -->
+<div class="gen-modal-overlay" id="addCompanyModal">
+  <div class="gen-modal">
+    <div class="gen-modal-header">
+      <div>
+        <div class="gen-modal-title">Add Company</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Manually add a target company to your pipeline</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="gen-modal-body">
+      <form id="addCompanyForm" onsubmit="submitAddCompany(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Company Name *</label>
+            <input type="text" class="form-input" name="name" required placeholder="e.g. Klarna">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Industry</label>
+            <input type="text" class="form-input" name="industry" placeholder="e.g. Fintech">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Company Size</label>
+            <select class="form-select" name="company_size">
+              <option value="unknown">Unknown</option>
+              <option value="startup">Startup</option>
+              <option value="scale_up">Scale-up</option>
+              <option value="enterprise">Enterprise</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Domain</label>
+            <input type="text" class="form-input" name="domain" placeholder="company.com">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">LinkedIn URL</label>
+            <input type="url" class="form-input" name="linkedin_url" placeholder="https://linkedin.com/company/...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Website</label>
+            <input type="url" class="form-input" name="website" placeholder="https://...">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hiring Signal / Notes</label>
+          <textarea class="form-textarea" name="hiring_signal" placeholder="e.g. Hiring Java engineers, Series B, remote-first..."></textarea>
+        </div>
+        <div class="gen-modal-footer" style="padding:0;margin-top:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="closeAddModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Add Company</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── State ──
+let _genCompanyId = null;
+let _genCompanyName = '';
+let _genType = 'linkedin_dm';
+let _lastMsgId = null;
+let _searchTimer = null;
+
+// ── Discover targets ──
+async function runDiscover() {
+  const btn = document.getElementById('discoverBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span>◎</span> Discovering…';
+  try {
+    const r = await fetch('/api/outreach/discover', {method:'POST'});
+    const d = await r.json();
+    showToast(d.message || `Found ${d.added} new companies`, d.added > 0 ? 'success' : 'info');
+    if (d.added > 0) setTimeout(() => location.reload(), 1200);
+  } catch(e) {
+    showToast('Discovery failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>⊕</span> Find Targets';
+  }
+}
+
+// ── Generate modal ──
+function openGenModal(companyId, companyName) {
+  _genCompanyId = companyId;
+  _genCompanyName = companyName;
+  document.getElementById('genModalCompany').textContent = companyName;
+  document.getElementById('genModalSubtitle').textContent = 'Generate AI-personalised outreach';
+  document.getElementById('genOutput').style.display = 'none';
+  document.getElementById('genLoading').style.display = 'none';
+  document.getElementById('markSentBtn').style.display = 'none';
+  document.getElementById('genContactName').value = '';
+  document.getElementById('genContactEmail').value = '';
+  document.getElementById('genExtraContext').value = '';
+  _lastMsgId = null;
+  document.getElementById('genModal').classList.add('open');
+}
+function closeGenModal() {
+  document.getElementById('genModal').classList.remove('open');
+}
+
+function switchType(type, btn) {
+  _genType = type;
+  document.querySelectorAll('.type-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('genOutput').style.display = 'none';
+  document.getElementById('markSentBtn').style.display = 'none';
+  _lastMsgId = null;
+}
+
+async function generateOutreach() {
+  if (!_genCompanyId) return;
+  document.getElementById('genLoading').style.display = 'block';
+  document.getElementById('genOutput').style.display = 'none';
+  try {
+    const r = await fetch('/api/outreach/generate', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        company_id: _genCompanyId,
+        message_type: _genType,
+        contact_name: document.getElementById('genContactName').value,
+        contact_email: document.getElementById('genContactEmail').value,
+        extra_context: document.getElementById('genExtraContext').value,
+      })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Generation failed');
+    _lastMsgId = d.id;
+    showGeneratedMessage(d);
+  } catch(e) {
+    showToast('Generation failed: ' + e.message, 'error');
+  } finally {
+    document.getElementById('genLoading').style.display = 'none';
+  }
+}
+
+function showGeneratedMessage(d) {
+  const out = document.getElementById('genOutput');
+  const subj = document.getElementById('genSubject');
+  document.getElementById('genContent').textContent = d.content || '';
+  if (d.subject) {
+    subj.style.display = 'block';
+    subj.textContent = '📧 Subject: ' + d.subject;
+  } else {
+    subj.style.display = 'none';
+  }
+  const score = d.hook_score || 0;
+  document.getElementById('genScoreVal').textContent = score + '/100';
+  document.getElementById('genScoreFill').style.width = score + '%';
+  document.getElementById('genScoreFill').style.background =
+    score >= 70 ? '#10b981' : score >= 45 ? '#f59e0b' : '#6366f1';
+  document.getElementById('genScoreDisplay').textContent = score >= 70 ? '★ Strong hook' : score >= 45 ? '~ Good' : '▲ Refine';
+  document.getElementById('markSentBtn').style.display = 'inline-flex';
+  out.style.display = 'block';
+}
+
+async function regenMessage() {
+  await generateOutreach();
+}
+
+async function generateBundle() {
+  if (!_genCompanyId) return;
+  document.getElementById('genLoading').style.display = 'block';
+  document.getElementById('genOutput').style.display = 'none';
+  try {
+    const r = await fetch('/api/outreach/bundle/' + _genCompanyId, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        contact_name: document.getElementById('genContactName').value,
+        contact_email: document.getElementById('genContactEmail').value,
+      })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Bundle failed');
+    // Show the linkedin_dm by default from bundle
+    const dm = d.bundle && d.bundle.linkedin_dm;
+    if (dm && dm.content) {
+      _lastMsgId = dm.id;
+      showGeneratedMessage(dm);
+      showToast('All 3 message types generated and saved!', 'success');
+    }
+  } catch(e) {
+    showToast('Bundle failed: ' + e.message, 'error');
+  } finally {
+    document.getElementById('genLoading').style.display = 'none';
+  }
+}
+
+async function copyGenerated() {
+  const text = document.getElementById('genContent').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard!', 'success');
+  } catch(e) {
+    showToast('Could not copy', 'error');
+  }
+}
+
+async function markAsSent() {
+  if (!_lastMsgId) return;
+  try {
+    const r = await fetch('/api/outreach/messages/' + _lastMsgId + '/sent', {method:'POST'});
+    if (!r.ok) throw new Error('Failed');
+    showToast('Marked as sent!', 'success');
+    document.getElementById('markSentBtn').style.display = 'none';
+    document.getElementById('markSentBtn').textContent = '✓ Sent';
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ── Message history ──
+async function viewMessages(companyId, companyName) {
+  document.getElementById('msgHistTitle').textContent = companyName + ' — Messages';
+  document.getElementById('msgHistBody').innerHTML = '<div class="empty-state">Loading…</div>';
+  document.getElementById('msgHistModal').classList.add('open');
+  try {
+    const r = await fetch('/api/outreach/companies/' + companyId + '/messages');
+    const d = await r.json();
+    const msgs = d.messages || [];
+    if (msgs.length === 0) {
+      document.getElementById('msgHistBody').innerHTML = '<div class="empty-state">No messages yet for this company.</div>';
+      return;
+    }
+    let html = '<div class="msg-thread">';
+    msgs.forEach(m => {
+      const score = m.ai_hook_score || 0;
+      html += `
+        <div class="msg-item">
+          <div class="msg-meta">
+            <span class="msg-type ${m.message_type}">${(m.message_type||'').replace('_',' ')}</span>
+            <span class="msg-score ${score >= 70 ? 'high' : ''}">Score: ${score}/100</span>
+          </div>
+          ${m.subject ? `<div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">📧 ${m.subject}</div>` : ''}
+          <div class="msg-content-preview">${escHtml(m.content || '')}</div>
+          <div class="msg-status-row">
+            <span class="msg-status-badge ${m.status || 'draft'}">${m.status || 'draft'}</span>
+            ${m.sent_at ? `<span style="font-size:0.68rem;color:var(--text-muted);">Sent: ${m.sent_at.substring(0,10)}</span>` : ''}
+            ${m.response_type ? `<span class="msg-status-badge responded">${m.response_type}</span>` : ''}
+            ${m.status !== 'sent' && m.status !== 'responded' && m.status !== 'converted' ? `
+              <button class="btn btn-ghost btn-sm" style="font-size:0.68rem;padding:2px 8px;" onclick="markSentFromHistory(${m.id},this)">Mark Sent</button>
+            ` : ''}
+            ${m.status === 'sent' && !m.response_type ? `
+              <button class="btn btn-ghost btn-sm" style="font-size:0.68rem;padding:2px 8px;" onclick="recordResponsePrompt(${m.id})">Record Response</button>
+            ` : ''}
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+    document.getElementById('msgHistBody').innerHTML = html;
+  } catch(e) {
+    document.getElementById('msgHistBody').innerHTML = '<div class="empty-state">Error loading messages.</div>';
+  }
+}
+
+async function markSentFromHistory(msgId, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  const r = await fetch('/api/outreach/messages/' + msgId + '/sent', {method:'POST'});
+  if (r.ok) { btn.textContent = '✓ Sent'; showToast('Marked sent', 'success'); }
+  else { btn.disabled = false; btn.textContent = 'Mark Sent'; }
+}
+
+async function recordResponsePrompt(msgId) {
+  const type = prompt('Response type? (positive / negative / converted / no_response)');
+  if (!type) return;
+  const notes = prompt('Notes (optional):') || '';
+  const val = parseInt(prompt('Conversion value EUR (0 if none):') || '0');
+  try {
+    const r = await fetch('/api/outreach/messages/' + msgId + '/response', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({response_type: type, response_content: notes, conversion_value: val})
+    });
+    if (r.ok) showToast('Response recorded!', 'success');
+    else showToast('Error recording response', 'error');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+function closeMsgHist() {
+  document.getElementById('msgHistModal').classList.remove('open');
+}
+
+// ── Companies load / search ──
+function debounceSearch(val) {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => loadCompanies(), 400);
+}
+
+async function loadCompanies() {
+  const search = document.getElementById('companySearch').value;
+  const sortBy = document.getElementById('companySortBy').value;
+  const r = await fetch(`/api/outreach/companies?search=${encodeURIComponent(search)}&sort_by=${sortBy}&per_page=20`);
+  const d = await r.json();
+  renderCompaniesTable(d.companies || [], d.total || 0);
+}
+
+function renderCompaniesTable(companies, total) {
+  document.getElementById('companiesCount').textContent = total;
+  const tbody = document.getElementById('companiesTbody');
+  if (!companies.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state" style="padding:30px;">No companies found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = companies.map(c => {
+    const status = c.total_sent > 0 ? 'active' : c.last_sent_at ? 'idle' : 'new';
+    const stageClass = c.wins > 0 ? 'stage-converted' : c.total_sent > 0 ? 'stage-contacted' : 'stage-new';
+    const stageLabel = c.wins > 0 ? 'Converted' : c.total_sent > 0 ? 'Contacted' : 'New';
+    const techs = (c.tech_list || []).slice(0,3).map(t => `<span class="tech-chip">${escHtml(t)}</span>`).join('');
+    const rev = c.revenue_potential ? `€${c.revenue_potential.toLocaleString()}` : '—';
+    const signal = c.hiring_signal ? `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">${escHtml(c.hiring_signal.substring(0,60))}</div>` : '';
+    return `<tr>
+      <td>
+        <div class="company-name-cell">
+          <span class="status-dot ${status}"></span>${escHtml(c.name)}
+        </div>${signal}
+      </td>
+      <td class="revenue-cell">${rev}</td>
+      <td>${techs || '—'}</td>
+      <td><span class="stage-badge ${stageClass}">${stageLabel}</span></td>
+      <td>${c.total_sent || 0}</td>
+      <td>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-primary btn-sm" onclick="openGenModal(${c.id},'${escAttr(c.name)}')" title="Generate">✦</button>
+          <button class="btn btn-ghost btn-sm" onclick="viewMessages(${c.id},'${escAttr(c.name)}')" title="History">◎</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteCompany(${c.id})" title="Remove" style="color:#ef4444;">✕</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function deleteCompany(id) {
+  if (!confirm('Remove this company from your pipeline?')) return;
+  await fetch('/api/outreach/companies/' + id, {method:'DELETE'});
+  showToast('Company removed', 'info');
+  loadCompanies();
+}
+
+// ── Add company ──
+function openAddModal() {
+  document.getElementById('addCompanyModal').classList.add('open');
+}
+function closeAddModal() {
+  document.getElementById('addCompanyModal').classList.remove('open');
+}
+async function submitAddCompany(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  payload.tech_stack = [];
+  try {
+    const r = await fetch('/api/outreach/companies', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if (!r.ok) throw new Error('Failed to add company');
+    showToast('Company added!', 'success');
+    closeAddModal();
+    loadCompanies();
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ── Plan refresh ──
+async function refreshPlan() {
+  const r = await fetch('/api/outreach/daily-plan?n=10');
+  const d = await r.json();
+  const plan = d.plan || [];
+  document.getElementById('planCount').textContent = plan.length;
+  if (!plan.length) {
+    document.getElementById('planList').innerHTML = '<div class="empty-state"><div style="font-size:2rem;margin-bottom:8px;">🎯</div><div>No companies to contact today.</div></div>';
+    return;
+  }
+  document.getElementById('planList').innerHTML = plan.map((c, i) => {
+    const rankClass = i < 3 ? 'high' : i < 6 ? 'med' : '';
+    const rev = c.revenue_potential ? `<span class="plan-rev">€${c.revenue_potential.toLocaleString()} est.</span>` : '';
+    const reasons = (c.contact_reasons || []).map(r => `<span class="plan-reason">${escHtml(r)}</span>`).join('');
+    const techs = (c.tech_list || []).slice(0,4).map(t => `<span class="tech-chip">${escHtml(t)}</span>`).join('');
+    return `
+      <div class="plan-item" onclick="openGenModal(${c.id},'${escAttr(c.name)}')">
+        <div class="plan-rank ${rankClass}">${i+1}</div>
+        <div class="plan-body">
+          <div class="plan-name">${escHtml(c.name)}</div>
+          <div style="display:flex;gap:10px;align-items:center;">${rev}</div>
+          ${reasons ? `<div class="plan-reasons">${reasons}</div>` : ''}
+          ${techs ? `<div class="plan-tech" style="margin-top:5px;">${techs}</div>` : ''}
+        </div>
+        <div class="plan-actions">
+          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openGenModal(${c.id},'${escAttr(c.name)}')">✦ Generate</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Utils ──
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+}
+
+function showToast(msg, level='info') {
+  const t = document.createElement('div');
+  t.className = 'flash ' + level;
+  t.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;max-width:320px;';
+  t.innerHTML = `<span>${level==='success'?'✓':level==='error'?'✕':'ℹ'}</span> ${escHtml(msg)}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// Close modals on overlay click
+document.getElementById('genModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('genModal')) closeGenModal();
+});
+document.getElementById('msgHistModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('msgHistModal')) closeMsgHist();
+});
+document.getElementById('addCompanyModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('addCompanyModal')) closeAddModal();
+});
+</script>
+{% endblock %}

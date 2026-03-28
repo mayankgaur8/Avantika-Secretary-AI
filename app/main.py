@@ -77,6 +77,21 @@ from app.services.apply_engine import (
     get_learning_insights, get_pipeline_kanban,
     PIPELINE_STAGES, STAGE_COLORS, STAGE_LABELS,
 )
+from app.services.client_acquisition import (
+    discover_targets_from_jobs,
+    generate_outreach as ca_generate_outreach,
+    generate_outreach_bundle,
+    get_daily_plan as ca_get_daily_plan,
+    get_revenue_stats,
+    list_companies as ca_list_companies,
+    add_company as ca_add_company,
+    delete_company as ca_delete_company,
+    get_company_messages,
+    mark_sent as ca_mark_sent,
+    record_response as ca_record_response,
+    get_templates as ca_get_templates,
+    get_learning_insights as ca_get_learning_insights,
+)
 
 
 def sync_remote_jobs() -> dict:
@@ -1285,3 +1300,174 @@ def api_fast_apply(payload: dict):
         return {"batch": fast_apply_batch(n)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ═══════════════════════════════════════════════════════════════
+#  CLIENT ACQUISITION & REVENUE ENGINE
+# ═══════════════════════════════════════════════════════════════
+
+class OutreachGeneratePayload(BaseModel):
+    company_id: int
+    message_type: str = "linkedin_dm"
+    contact_name: str = ""
+    contact_email: str = ""
+    contact_linkedin: str = ""
+    extra_context: str = ""
+
+
+class OutreachResponsePayload(BaseModel):
+    response_type: str
+    response_content: str = ""
+    conversion_value: int = 0
+
+
+class AddOutreachCompanyPayload(BaseModel):
+    name: str
+    domain: str = ""
+    linkedin_url: str = ""
+    website: str = ""
+    industry: str = ""
+    company_size: str = "unknown"
+    tech_stack: list[str] = []
+    hiring_signal: str = ""
+    notes: str = ""
+
+
+@app.get("/client-outreach", response_class=HTMLResponse)
+def page_client_outreach(request: Request):
+    user = get_user()
+    stats = get_revenue_stats()
+    daily_plan = ca_get_daily_plan(10)
+    companies_data = ca_list_companies(page=1, per_page=20)
+    templates_data = ca_get_templates()
+    insights = ca_get_learning_insights()
+    return templates.TemplateResponse(
+        "client_outreach.html",
+        {
+            "request": request,
+            "user": user,
+            "active_page": "client_outreach",
+            "stats": stats,
+            "daily_plan": daily_plan,
+            "companies": companies_data["companies"],
+            "companies_total": companies_data["total"],
+            "templates_data": templates_data,
+            "insights": insights,
+        },
+    )
+
+
+@app.post("/api/outreach/discover")
+def api_outreach_discover():
+    try:
+        added = discover_targets_from_jobs(limit=50)
+        return {"added": added, "message": f"Discovered {added} new target companies"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/outreach/generate")
+def api_outreach_generate(payload: OutreachGeneratePayload):
+    try:
+        result = ca_generate_outreach(
+            payload.company_id,
+            payload.message_type,
+            payload.contact_name,
+            payload.contact_email,
+            payload.contact_linkedin,
+            payload.extra_context,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/outreach/bundle/{company_id}")
+def api_outreach_bundle(company_id: int, payload: dict = {}):
+    try:
+        contact_name = payload.get("contact_name", "") if payload else ""
+        contact_email = payload.get("contact_email", "") if payload else ""
+        return generate_outreach_bundle(company_id, contact_name, contact_email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/outreach/daily-plan")
+def api_outreach_daily_plan(n: int = 10):
+    return {"plan": ca_get_daily_plan(n)}
+
+
+@app.get("/api/outreach/stats")
+def api_outreach_stats():
+    return get_revenue_stats()
+
+
+@app.get("/api/outreach/companies")
+def api_outreach_list_companies(
+    search: str = "",
+    sort_by: str = "revenue",
+    page: int = 1,
+    per_page: int = 20,
+):
+    return ca_list_companies(search=search, sort_by=sort_by, page=page, per_page=per_page)
+
+
+@app.post("/api/outreach/companies")
+def api_outreach_add_company(payload: AddOutreachCompanyPayload):
+    try:
+        company = ca_add_company(
+            name=payload.name,
+            domain=payload.domain,
+            linkedin_url=payload.linkedin_url,
+            website=payload.website,
+            industry=payload.industry,
+            company_size=payload.company_size,
+            tech_stack=payload.tech_stack,
+            hiring_signal=payload.hiring_signal,
+            notes=payload.notes,
+        )
+        return company
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete("/api/outreach/companies/{company_id}")
+def api_outreach_delete_company(company_id: int):
+    return ca_delete_company(company_id)
+
+
+@app.get("/api/outreach/companies/{company_id}/messages")
+def api_outreach_company_messages(company_id: int):
+    return {"messages": get_company_messages(company_id)}
+
+
+@app.post("/api/outreach/messages/{message_id}/sent")
+def api_outreach_mark_sent(message_id: int):
+    return ca_mark_sent(message_id)
+
+
+@app.post("/api/outreach/messages/{message_id}/response")
+def api_outreach_record_response(message_id: int, payload: OutreachResponsePayload):
+    try:
+        return ca_record_response(
+            message_id,
+            payload.response_type,
+            payload.response_content,
+            payload.conversion_value,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/outreach/templates")
+def api_outreach_templates():
+    return {"templates": ca_get_templates()}
+
+
+@app.get("/api/outreach/insights")
+def api_outreach_insights():
+    return ca_get_learning_insights()

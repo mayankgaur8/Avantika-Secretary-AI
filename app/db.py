@@ -395,6 +395,63 @@ CREATE TABLE IF NOT EXISTS smart_alerts (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
 );
+
+-- ─── CLIENT ACQUISITION & REVENUE ENGINE ──────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS outreach_companies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    domain TEXT,
+    linkedin_url TEXT,
+    website TEXT,
+    industry TEXT,
+    company_size TEXT,
+    tech_stack TEXT,
+    hiring_signal TEXT,
+    source TEXT DEFAULT 'manual',
+    remote_job_id INTEGER,
+    revenue_potential INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    notes TEXT,
+    last_contacted_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(LOWER(name)),
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
+
+CREATE TABLE IF NOT EXISTS outreach_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    message_type TEXT NOT NULL,
+    subject TEXT,
+    content TEXT NOT NULL,
+    contact_name TEXT,
+    contact_email TEXT,
+    contact_linkedin TEXT,
+    status TEXT DEFAULT 'draft',
+    sent_at TEXT,
+    responded_at TEXT,
+    response_type TEXT,
+    response_content TEXT,
+    conversion_value INTEGER,
+    ai_hook_score INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(company_id) REFERENCES outreach_companies(id)
+);
+
+CREATE TABLE IF NOT EXISTS outreach_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    template_type TEXT,
+    subject_template TEXT,
+    content_template TEXT,
+    use_count INTEGER DEFAULT 0,
+    response_count INTEGER DEFAULT 0,
+    conversion_count INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    is_builtin INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -459,6 +516,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE remote_jobs ADD COLUMN follow_up_date TEXT")
     if not _has_column(conn, "remote_jobs", "salary_discussed"):
         conn.execute("ALTER TABLE remote_jobs ADD COLUMN salary_discussed INTEGER")
+    # Client Acquisition additions (no-op if tables just created)
+    if _has_table(conn, "outreach_companies"):
+        _seed_outreach_templates(conn)
     # Apply Engine additions
     if not _has_column(conn, "remote_jobs", "pipeline_stage"):
         conn.execute("ALTER TABLE remote_jobs ADD COLUMN pipeline_stage TEXT DEFAULT 'DISCOVERED'")
@@ -470,6 +530,67 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE remote_jobs ADD COLUMN apply_kit_ready INTEGER DEFAULT 0")
     if not _has_column(conn, "remote_jobs", "last_stage_changed_at"):
         conn.execute("ALTER TABLE remote_jobs ADD COLUMN last_stage_changed_at TEXT")
+
+
+def _seed_outreach_templates(conn: sqlite3.Connection) -> None:
+    """Seed high-conversion built-in outreach templates (runs once)."""
+    if conn.execute("SELECT COUNT(*) FROM outreach_templates WHERE is_builtin=1").fetchone()[0] > 0:
+        return
+    templates = [
+        (
+            "Problem-Aware Hook",
+            "hook_message",
+            None,
+            "I noticed {company} is scaling its {tech} stack — I've helped 3 teams do exactly this, "
+            "cutting deploy cycles from 45 min to 8 min and reducing infra cost by 30%. "
+            "Worth a quick 10-min call?",
+        ),
+        (
+            "Social Proof LinkedIn DM",
+            "linkedin_dm",
+            None,
+            "Hi {name}, I architected a Spring Boot microservices platform serving 1.2M daily users — "
+            "saw {company} is building something similar. I'm available for contract/consulting work "
+            "and could add immediate value. Open to a quick chat?",
+        ),
+        (
+            "Direct Value Email",
+            "email_pitch",
+            "Java/Spring Lead available for contract — 17 yrs exp, immediate start",
+            "Hi {name},\n\nI'm a Java Full-Stack Technical Lead with 17 years of experience "
+            "specialising in Spring Boot microservices, Kafka event-driven systems, and cloud "
+            "(AWS/Azure/K8s).\n\nRecent impact:\n"
+            "• Reduced API latency 40% via async refactor + Redis caching\n"
+            "• Led 12-service microservices migration from monolith\n"
+            "• System serving 1.2M DAUs at 99.9% uptime\n\n"
+            "I'm available for remote contract work (€70-100/hr) and could start within 5 business days.\n\n"
+            "Would a 15-minute scoping call make sense this week?\n\nBest,\nMayank Gaur",
+        ),
+        (
+            "Pain Point Opener",
+            "linkedin_dm",
+            None,
+            "Hey {name} — senior Java teams often lose weeks when modernising legacy systems. "
+            "I've done it 3× (monolith → microservices, CI/CD from scratch, Kafka event pipelines). "
+            "If {company} has similar challenges, I'm available as a hands-on contractor. "
+            "5 min call?",
+        ),
+        (
+            "Follow-Up (No Response)",
+            "follow_up",
+            "Following up — Java contract availability",
+            "Hi {name},\n\nFollowing up on my message from last week. "
+            "Still available for remote Java/Spring contract work — happy to do a no-obligation "
+            "30-min architecture review call to see if there's a fit.\n\nBest, Mayank",
+        ),
+    ]
+    for name, ttype, subject, content in templates:
+        conn.execute(
+            """INSERT OR IGNORE INTO outreach_templates
+               (name, template_type, subject_template, content_template, is_builtin)
+               VALUES (?,?,?,?,1)""",
+            (name, ttype, subject, content),
+        )
 
 
 def _seed_defaults(conn: sqlite3.Connection) -> None:
