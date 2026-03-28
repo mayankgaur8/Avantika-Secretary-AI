@@ -665,61 +665,127 @@ def ai_match_job(job_id: int) -> dict:
 
 # ─── Proposal generation ──────────────────────────────────────────────────────
 
+# Mayank's proven achievements bank — injected into every proposal for credibility
+_ACHIEVEMENTS_BANK = """
+CANDIDATE ACHIEVEMENTS (select 2-3 most relevant to this job):
+• Reduced API response latency by 40% via Redis caching layer + async processing refactor
+• Led migration from Java monolith to 12-service Spring Boot microservices architecture
+• System served 1.2M+ daily active users with 99.9% uptime on AWS ECS / Kubernetes
+• Managed cross-functional team of 8 engineers across frontend (React/Angular) and backend (Java)
+• Reduced CI/CD pipeline duration from 45 min to 8 min via Jenkins + Docker optimisation
+• Designed event-driven architecture using Apache Kafka handling 100K+ events/day
+• Azure cost reduction of 30% through containerisation and auto-scaling on AKS
+• Delivered 3 consecutive major product releases ahead of schedule over a 17-month engagement
+• Built REST API platform now consumed by 6 internal teams and 2 external partners
+• Implemented OAuth2/JWT auth layer for enterprise SaaS serving 50,000+ users
+"""
+
 _PROPOSAL_PROMPTS = {
     "cover_letter": (
-        "Write a professional cover letter for this job. "
-        "Highlight the candidate's 17+ years Java/Spring Boot expertise, "
-        "microservices and cloud experience, and remote work capability. "
-        "Keep it to 3 paragraphs. End with an availability statement."
+        "Write a high-impact cover letter. Requirements:\n"
+        "• Para 1 — HOOK: Open with a specific achievement that directly relates to this job. "
+        "  Example: 'I built a Spring Boot microservices platform serving 1.2M daily users — "
+        "  when I saw this role at {company}, the architecture challenge immediately resonated.'\n"
+        "• Para 2 — PROOF: Mention 2-3 measurable achievements from the bank above that match "
+        "  the job requirements. Be specific — numbers beat adjectives.\n"
+        "• Para 3 — FIT + CTA: Explain why this specific company / role excites you. "
+        "  Close with: 'I'm available for a 20-minute discovery call this week — happy to jump on a "
+        "  call at short notice.' Include remote readiness.\n"
+        "Keep to 3 tight paragraphs. No filler phrases. No 'I am writing to apply'."
     ),
     "proposal": (
-        "Write a freelance/contract project proposal for this job. "
-        "Include: brief intro, relevant experience, approach, rate expectation "
-        "(€60-100/hr depending on scope), and availability. "
-        "Professional but concise — max 300 words."
+        "Write a freelance/contract project proposal. Requirements:\n"
+        "• Line 1 — HOOK: 1-sentence credibility opener with a metric. "
+        "  E.g. 'I've architected Spring Boot microservices handling 100K+ Kafka events/day — "
+        "  I can bring that same rigour to {company}.'\n"
+        "• Section: Relevant Experience (3 bullet points with numbers)\n"
+        "• Section: My Approach (2-3 sentences on how you'd tackle this project)\n"
+        "• Section: Rate & Availability — state €70–100/hr depending on scope, "
+        "  available within 5 business days, remote-first.\n"
+        "• Close with strong CTA: 'Let's schedule a 15-min scoping call — I can start "
+        "  as soon as next week.'\n"
+        "Max 280 words. Confident, not arrogant."
     ),
     "outreach": (
-        "Write a short recruiter outreach message (LinkedIn DM style). "
-        "Max 120 words. Mention Java/Spring Boot expertise, remote availability, "
-        "and ask about the role."
+        "Write a LinkedIn DM / recruiter outreach message. Requirements:\n"
+        "• Max 100 words.\n"
+        "• Open with something specific about the job or company — not generic.\n"
+        "• Mention one concrete achievement relevant to the role.\n"
+        "• State remote availability and contract/consulting preference.\n"
+        "• End with a specific ask: 'Worth a quick chat?'\n"
+        "No fluff. Sound like a senior professional who knows their value."
+    ),
+    "pitch": (
+        "Write a 2-3 line elevator pitch for this role. This is shown next to the apply link.\n"
+        "Format:\n"
+        "Line 1: Your strongest matching skill / achievement for this specific role.\n"
+        "Line 2: Why you're a uniquely good fit (specific tech + experience match).\n"
+        "Line 3: Availability + CTA.\n"
+        "Be punchy. Each line should be one sentence max."
     ),
     "comparison": (
-        "Compare this role against a typical Java Lead contract role in Europe. "
-        "Cover: match quality, salary competitiveness, Europe alignment, "
-        "recommended action (apply now / wait / skip). Be concise."
+        "Compare this role against an ideal Java Lead contract in Europe. "
+        "Output a concise table or bullet list covering: match score rationale, "
+        "salary vs market (€80k–130k/yr or €60–100/hr), Europe alignment, "
+        "income speed (contract vs fulltime), and a clear verdict: "
+        "APPLY NOW / APPLY THIS WEEK / SKIP. Give one sentence of reasoning for the verdict."
     ),
 }
 
+_PROPOSAL_SYSTEM = (
+    "You are an elite tech career strategist specialising in senior Java developer placements. "
+    "Your proposals consistently achieve 40%+ response rates. "
+    "Write with confidence, specificity, and urgency. "
+    "Output ONLY the requested document — no meta-commentary, no 'here is your letter', "
+    "no markdown headers unless they add value. Plain professional text."
+)
+
 
 def generate_proposal(job_id: int, proposal_type: str = "cover_letter") -> dict:
-    """Generate an AI-written proposal/cover letter/message for a job."""
+    """
+    Generate an AI-written proposal with optimised hooks, measurable achievements,
+    and apply-history feedback context.
+    """
     job = get_remote_job(job_id)
     if not job:
         raise ValueError(f"Remote job {job_id} not found")
 
     instruction = _PROPOSAL_PROMPTS.get(proposal_type, _PROPOSAL_PROMPTS["cover_letter"])
+    # Substitute {company} placeholder
+    instruction = instruction.replace("{company}", job.get("company", "your company"))
+
     salary_info = ""
     if job.get("salary_max"):
         salary_info = f"Salary: {job.get('salary_currency','EUR')} {job.get('salary_min',0):,}–{job.get('salary_max',0):,}/yr."
     elif job.get("hourly_rate_max"):
         salary_info = f"Rate: €{job.get('hourly_rate_min',0)}–€{job.get('hourly_rate_max',0)}/hr."
 
+    # Pull apply-history learning context
+    feedback_context = ""
+    try:
+        from app.services.apply_engine import get_learning_insights
+        insights = get_learning_insights()
+        if insights.get("prompt_context"):
+            feedback_context = f"\nPREVIOUS APPLY HISTORY CONTEXT:\n{insights['prompt_context']}\n"
+    except Exception:
+        pass
+
     prompt = (
-        f"CANDIDATE PROFILE:\n{_PROFILE_BLOB}\n\n"
-        f"JOB:\n"
+        f"CANDIDATE PROFILE:\n{_PROFILE_BLOB}\n"
+        f"{_ACHIEVEMENTS_BANK}\n"
+        f"{feedback_context}\n"
+        f"JOB POSTING:\n"
         f"Title: {job['title']} at {job['company']}\n"
         f"Location: {job.get('location','')}\n"
         f"Type: {job.get('job_type','')} / {job.get('remote_type','')}\n"
         f"{salary_info}\n"
-        f"Description: {(job.get('description') or '')[:600]}\n\n"
+        f"Tags: {job.get('tags','')}\n"
+        f"Description: {(job.get('description') or '')[:800]}\n\n"
         f"TASK: {instruction}"
     )
-    system = (
-        "You are an expert career writer specialising in tech roles. "
-        "Output only the requested document — no extra commentary."
-    )
+
     try:
-        content = ai_call(prompt, system=system, max_tokens=800)
+        content = ai_call(prompt, system=_PROPOSAL_SYSTEM, max_tokens=900)
     except Exception as exc:
         logger.error("Proposal generation failed for job %d: %s", job_id, exc)
         content = f"[Proposal generation failed: {exc}]"
@@ -729,6 +795,12 @@ def generate_proposal(job_id: int, proposal_type: str = "cover_letter") -> dict:
             "INSERT INTO remote_proposals (remote_job_id, proposal_type, content) VALUES (?,?,?)",
             (job_id, proposal_type, content),
         )
+        # Mark apply_kit_ready
+        conn.execute(
+            "UPDATE remote_jobs SET apply_kit_ready=1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (job_id,),
+        )
+
     return {"job_id": job_id, "proposal_type": proposal_type, "content": content}
 
 

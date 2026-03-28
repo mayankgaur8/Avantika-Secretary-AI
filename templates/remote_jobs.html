@@ -354,6 +354,9 @@
             {% if job.is_europe_friendly %}
             <span class="badge badge-europe">🇪🇺 Europe</span>
             {% endif %}
+            {% if job.is_fast_pay %}
+            <span class="badge" style="background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3);">⚡ FAST PAY</span>
+            {% endif %}
             {% if job.travel_fund_score and job.travel_fund_score >= 70 %}
             <span class="badge badge-travel">✈ Travel Fund</span>
             {% endif %}
@@ -365,6 +368,19 @@
             <span class="badge badge-applied">✓ Applied</span>
             {% endif %}
           </div>
+          {% if job.income_priority_score and job.income_priority_score > 0 %}
+          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-muted);">
+            <span>Income Priority:</span>
+            <span style="font-weight:700;color:{% if job.income_priority_score >= 70 %}#eab308{% elif job.income_priority_score >= 45 %}var(--purple){% else %}var(--accent-light){% endif %};">
+              {{ job.income_priority_score }}/100
+            </span>
+            {% if job.pipeline_stage and job.pipeline_stage != 'DISCOVERED' %}
+            <span style="background:var(--bg-input);padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;color:var(--text-secondary);">
+              {{ job.pipeline_stage }}
+            </span>
+            {% endif %}
+          </div>
+          {% endif %}
 
           {% if job.salary_max or job.hourly_rate_max %}
           <div class="job-card-salary">
@@ -401,8 +417,8 @@
               {{ '◆' if job.is_saved else '◇' }} Save
             </button>
             {% if job.application_status not in ('applied', 'interviewing', 'offer') %}
-            <button class="btn btn-ghost btn-sm" onclick="markApplied({{ job.id }}, this)" title="Mark Applied">
-              ✓ Applied
+            <button class="btn btn-primary btn-sm" onclick="applyWithAIPipeline({{ job.id }})" title="Apply with AI">
+              ⚡ Apply
             </button>
             {% else %}
             <span class="badge badge-applied" style="padding:6px 8px;">✓ Applied</span>
@@ -916,6 +932,20 @@ function copyText(btn, text) {
   navigator.clipboard.writeText(text).then(() => {
     btn.textContent = '✓ Copied!';
     setTimeout(() => { btn.textContent = '⧉ Copy'; }, 2000);
+  });
+}
+
+// ── Apply with AI (redirect to pipeline apply modal) ─────────────────────────
+function applyWithAIPipeline(jobId) {
+  // First advance pipeline stage, then open apply modal on pipeline page
+  fetch(`/api/apply-pipeline/${jobId}/stage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage: 'HIGH_MATCH' })
+  }).then(() => {
+    window.location.href = `/apply-pipeline#job-${jobId}`;
+  }).catch(() => {
+    window.location.href = '/apply-pipeline';
   });
 }
 

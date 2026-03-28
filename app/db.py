@@ -368,6 +368,33 @@ CREATE TABLE IF NOT EXISTS remote_proposals (
     generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
 );
+
+-- ─── APPLY ENGINE MODULE ───────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS apply_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote_job_id INTEGER NOT NULL,
+    proposal_type TEXT,
+    proposal_content TEXT,
+    applied_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    response_received INTEGER DEFAULT 0,
+    response_type TEXT,
+    response_at TEXT,
+    days_to_response INTEGER,
+    notes TEXT,
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
+
+CREATE TABLE IF NOT EXISTS smart_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote_job_id INTEGER,
+    alert_type TEXT NOT NULL,
+    alert_message TEXT,
+    alert_data TEXT,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
 """
 
 
@@ -432,6 +459,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE remote_jobs ADD COLUMN follow_up_date TEXT")
     if not _has_column(conn, "remote_jobs", "salary_discussed"):
         conn.execute("ALTER TABLE remote_jobs ADD COLUMN salary_discussed INTEGER")
+    # Apply Engine additions
+    if not _has_column(conn, "remote_jobs", "pipeline_stage"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN pipeline_stage TEXT DEFAULT 'DISCOVERED'")
+    if not _has_column(conn, "remote_jobs", "income_priority_score"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN income_priority_score INTEGER DEFAULT 0")
+    if not _has_column(conn, "remote_jobs", "is_fast_pay"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN is_fast_pay INTEGER DEFAULT 0")
+    if not _has_column(conn, "remote_jobs", "apply_kit_ready"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN apply_kit_ready INTEGER DEFAULT 0")
+    if not _has_column(conn, "remote_jobs", "last_stage_changed_at"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN last_stage_changed_at TEXT")
 
 
 def _seed_defaults(conn: sqlite3.Connection) -> None:

@@ -1,0 +1,840 @@
+{% extends "base.html" %}
+
+{% block title %}Apply Pipeline — Income Engine{% endblock %}
+{% block page_title %}Apply Pipeline{% endblock %}
+{% block page_subtitle %}Income Conversion Engine — from discovered to won{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-ghost btn-sm" id="fastApplyBtn" onclick="openFastApply()">
+  ⚡ Apply to Top 5
+</button>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block head %}
+<style>
+/* ── Apply Pipeline Engine styles ── */
+
+/* Funnel bar */
+.pipeline-funnel {
+  display: flex; gap: 0; margin-bottom: 20px; border-radius: var(--radius-sm); overflow: hidden;
+  border: 1px solid var(--border);
+}
+.funnel-seg {
+  flex: 1; padding: 10px 8px; text-align: center; cursor: default;
+  transition: opacity .15s;
+}
+.funnel-seg:hover { opacity: .85; }
+.funnel-seg-count { font-size: 1.4rem; font-weight: 800; line-height: 1; }
+.funnel-seg-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; opacity: .85; }
+
+/* Daily actions panel */
+.daily-panel {
+  background: var(--bg-card); border: 1px solid rgba(99,102,241,.25);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 20px;
+}
+.daily-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.daily-panel-title {
+  font-size: 12px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--accent-light);
+  display: flex; align-items: center; gap: 6px;
+}
+.daily-actions-list { display: flex; flex-direction: column; gap: 8px; }
+.daily-action-item {
+  display: grid; grid-template-columns: 44px 1fr auto;
+  gap: 10px; align-items: center;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--bg-base); border: 1px solid var(--border);
+  transition: border-color .15s;
+}
+.daily-action-item:hover { border-color: var(--border-light); }
+.ips-badge {
+  width: 44px; height: 44px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; border: 2px solid;
+  flex-shrink: 0;
+}
+.ips-high { background: rgba(234,179,8,.12); border-color: #eab308; color: #eab308; }
+.ips-mid  { background: rgba(168,85,247,.12); border-color: var(--purple); color: var(--purple); }
+.ips-low  { background: rgba(99,102,241,.12);  border-color: var(--accent); color: var(--accent-light); }
+.da-title { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+.da-company { font-size: 11px; color: var(--text-secondary); }
+.da-reasons { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; }
+.da-reason { font-size: 10px; color: var(--text-muted); }
+.da-reason::before { content: "▸ "; color: var(--accent-light); }
+.da-actions { display: flex; gap: 5px; flex-direction: column; }
+.da-actions .btn { font-size: 10px; padding: 5px 9px; white-space: nowrap; }
+
+/* Kanban board */
+.kanban-scroll { overflow-x: auto; padding-bottom: 8px; }
+.kanban-board {
+  display: flex; gap: 12px; min-width: max-content;
+  padding: 4px 0 12px;
+}
+.kanban-col {
+  width: 240px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.kanban-col-header {
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+}
+.kanban-col-header .col-count {
+  font-size: 11px; font-weight: 800;
+  background: rgba(255,255,255,.1); padding: 1px 7px;
+  border-radius: 20px;
+}
+.kanban-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  transition: border-color .15s, transform .1s; cursor: default;
+}
+.kanban-card:hover { border-color: var(--border-light); transform: translateY(-1px); }
+.kanban-card-title { font-size: 11px; font-weight: 700; color: var(--text-primary); line-height: 1.3; }
+.kanban-card-company { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+.kanban-card-score {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px;
+}
+.score-mini {
+  font-size: 10px; font-weight: 700; padding: 2px 6px;
+  border-radius: 4px;
+}
+.score-mini.ips { background: rgba(234,179,8,.15); color: #eab308; }
+.score-mini.match { background: rgba(99,102,241,.15); color: var(--accent-light); }
+.kanban-card-meta { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+.kanban-badge {
+  font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.kanban-card-actions {
+  display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap;
+}
+.kanban-card-actions .btn { font-size: 9px; padding: 3px 7px; }
+.kanban-stage-select {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 4px; padding: 3px 5px; font-size: 10px; font-family: var(--font);
+  cursor: pointer; width: 100%; margin-top: 5px;
+}
+.kanban-stage-select:focus { outline: none; border-color: var(--accent); }
+.kanban-empty {
+  text-align: center; padding: 16px 8px; color: var(--text-muted); font-size: 11px;
+  border: 1px dashed var(--border); border-radius: var(--radius-sm);
+}
+
+/* Alerts panel */
+.alerts-panel { margin-bottom: 20px; }
+.alert-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); transition: background .12s;
+}
+.alert-item:hover { background: var(--bg-card-hover); }
+.alert-item:last-child { border-bottom: none; }
+.alert-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+}
+.alert-dot.HIGH_MATCH { background: var(--green); }
+.alert-dot.HIGH_RATE  { background: #eab308; }
+.alert-dot.CONTRACT_FOUND { background: var(--purple); }
+.alert-dot.EUROPE_CONTRACT { background: var(--accent-light); }
+.alert-msg { font-size: 12px; color: var(--text-primary); flex: 1; }
+.alert-time { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+
+/* Conversion stats */
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px,1fr)); gap: 12px; margin-bottom: 20px; }
+.stat-mini { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; text-align: center; }
+.stat-mini-num { font-size: 1.5rem; font-weight: 800; }
+.stat-mini-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+
+/* Weekly table */
+.weekly-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.weekly-table th { padding: 7px 12px; text-align: left; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.weekly-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+.weekly-table tr:last-child td { border-bottom: none; }
+.conversion-bar { display: inline-block; height: 6px; background: var(--accent); border-radius: 3px; }
+
+/* Fast Apply Modal */
+.fast-apply-step {
+  padding: 14px; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); margin-bottom: 12px;
+}
+.fast-apply-step-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+}
+.step-number {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent-dim); color: var(--accent-light);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800; flex-shrink: 0;
+}
+.fast-apply-proposal {
+  font-size: 12px; color: var(--text-secondary); line-height: 1.7;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px;
+  max-height: 180px; overflow-y: auto; white-space: pre-wrap;
+  margin-top: 8px;
+}
+
+/* Insights */
+.insight-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  background: var(--green-dim); color: var(--green); border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+}
+.insight-chip.amber { background: var(--amber-dim); color: var(--amber); }
+.insight-chip.purple { background: var(--purple-dim); color: var(--purple); }
+
+.section-title {
+  font-size: 12px; font-weight: 800; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .07em; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title span { color: var(--text-primary); font-size: 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Conversion Stats Bar -->
+<div class="stats-row">
+  <div class="stat-mini">
+    <div class="stat-mini-num" style="color:var(--text-secondary)">
+      {{ funnel.stage_counts.get('DISCOVERED', 0) }}
+    </div>
+    <div class="stat-mini-label">Discovered</div>
+  </div>
+  <div class="stat-mini">
+    <div class="stat-mini-num" style="color:var(--accent-light)">
+      {{ funnel.stage_counts.get('HIGH_MATCH', 0) }}
+    </div>
+    <div class="stat-mini-label">High Match</div>
+  </div>
+  <div class="stat-mini">
+    <div class="stat-mini-num" style="color:var(--amber)">
+      {{ funnel.stage_counts.get('READY_TO_APPLY', 0) }}
+    </div>
+    <div class="stat-mini-label">Ready</div>
+  </div>
+  <div class="stat-mini">
+    <div class="stat-mini-num" style="color:var(--purple)">
+      {{ funnel.stage_counts.get('APPLIED', 0) }}
+    </div>
+    <div class="stat-mini-label">Applied</div>
+  </div>
+  <div class="stat-mini">
+    <div class="stat-mini-num" style="color:var(--green)">
+      {{ funnel.stage_counts.get('RESPONDED', 0) + funnel.stage_counts.get('INTERVIEW', 0) }}
+    </div>
+    <div class="stat-mini-label">In Progress</div>
+  </div>
+  <div class="stat-mini">
+    <div class="stat-mini-num" style="color:#eab308">
+      {{ funnel.stage_counts.get('WON', 0) }}
+    </div>
+    <div class="stat-mini-label">Won</div>
+  </div>
+  {% if insights.response_rate is defined %}
+  <div class="stat-mini">
+    <div class="stat-mini-num" style="color:var(--cyan)">
+      {{ insights.response_rate }}%
+    </div>
+    <div class="stat-mini-label">Response Rate</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Pipeline Funnel Visual -->
+<div class="pipeline-funnel" style="margin-bottom:20px;">
+  {% for seg in funnel.funnel %}
+  <div class="funnel-seg" style="background:{{ seg.color }}22; color:{{ seg.color }};"
+       title="{{ seg.label }}: {{ seg.count }} jobs">
+    <div class="funnel-seg-count">{{ seg.count }}</div>
+    <div class="funnel-seg-label">{{ seg.label }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Smart Alerts -->
+{% if alerts %}
+<div class="card alerts-panel" style="padding:0; overflow:hidden; margin-bottom:20px;">
+  <div style="padding:12px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border);">
+    <div class="section-title" style="margin:0">
+      <span>🔔</span> Smart Alerts
+      <span style="background:var(--red-dim);color:var(--red);padding:1px 8px;border-radius:20px;font-size:10px;">
+        {{ alerts|length }}
+      </span>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="markAllAlertsRead()" style="font-size:10px;">
+      Mark all read
+    </button>
+  </div>
+  {% for alert in alerts %}
+  <div class="alert-item" id="alert-{{ alert.id }}">
+    <div class="alert-dot {{ alert.alert_type }}"></div>
+    <div style="flex:1">
+      <div class="alert-msg">{{ alert.alert_message }}</div>
+      {% if alert.income_priority_score %}
+      <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">
+        Income Priority: {{ alert.income_priority_score }}/100
+      </div>
+      {% endif %}
+    </div>
+    <div style="display:flex; gap:5px; align-items:center; flex-shrink:0;">
+      {% if alert.remote_job_id %}
+      <button class="btn btn-primary btn-sm" style="font-size:10px;"
+              onclick="openKanbanJobDetail({{ alert.remote_job_id }})">View</button>
+      {% endif %}
+      <button class="btn btn-ghost btn-sm" style="font-size:10px;"
+              onclick="dismissAlert({{ alert.id }})">✕</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- TODAY'S ACTION PLAN -->
+{% if daily_actions %}
+<div class="daily-panel">
+  <div class="daily-panel-header">
+    <div class="daily-panel-title">
+      <span>⚡</span> Today's Top Actions
+      <span style="font-size:10px;color:var(--text-muted);font-weight:400;text-transform:none;">
+        — ranked by income priority
+      </span>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="openFastApply()">
+      ⚡ Apply to Top 5
+    </button>
+  </div>
+  <div class="daily-actions-list">
+    {% for action in daily_actions %}
+    {% set ips = action.income_priority_score or 0 %}
+    {% set ips_class = 'ips-high' if ips >= 70 else ('ips-mid' if ips >= 45 else 'ips-low') %}
+    <div class="daily-action-item">
+      <div class="ips-badge {{ ips_class }}" title="Income Priority Score">{{ ips }}</div>
+      <div>
+        <div class="da-title">{{ action.title }}</div>
+        <div class="da-company">{{ action.company }}
+          {% if action.hourly_rate_max %}<span style="color:#eab308;font-weight:700;"> · €{{ action.hourly_rate_max }}/hr</span>{% endif %}
+          {% if action.salary_max and not action.hourly_rate_max %}<span style="color:var(--green);font-weight:600;"> · €{{ "{:,}".format(action.salary_max) }}/yr</span>{% endif %}
+        </div>
+        {% if action.action_reasons %}
+        <div class="da-reasons">
+          {% for reason in action.action_reasons %}
+          <div class="da-reason">{{ reason }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="da-actions">
+        {% if action.apply_kit_ready %}
+        <button class="btn btn-primary btn-sm" onclick="applyWithAI({{ action.id }})">Apply Now</button>
+        {% else %}
+        <button class="btn btn-ghost btn-sm" onclick="generateAndApply({{ action.id }})">Gen &amp; Apply</button>
+        {% endif %}
+        <button class="btn btn-ghost btn-sm" onclick="skipDailyAction({{ action.id }}, this)">Skip</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card" style="padding:30px; text-align:center; margin-bottom:20px;">
+  <div style="font-size:2rem;margin-bottom:8px;">⚡</div>
+  <div style="font-weight:700;color:var(--text-primary);margin-bottom:4px;">No actions ready</div>
+  <div style="color:var(--text-secondary);font-size:12px;">Sync remote jobs to populate your action list.</div>
+  <a href="/remote-jobs" style="margin-top:12px;" class="btn btn-primary btn-sm">Go to Remote Jobs →</a>
+</div>
+{% endif %}
+
+<!-- KANBAN BOARD -->
+<div class="section-title" style="margin-bottom:10px;">
+  <span>▣</span> Pipeline Board
+</div>
+<div class="kanban-scroll">
+  <div class="kanban-board">
+    {% for col in kanban.stages %}
+    <div class="kanban-col">
+      <div class="kanban-col-header"
+           style="background:{{ col.color }}18; color:{{ col.color }}; border: 1px solid {{ col.color }}40;">
+        {{ col.label }}
+        <span class="col-count">{{ col.total }}</span>
+      </div>
+      {% if col.jobs %}
+        {% for job in col.jobs %}
+        {% set ips = job.income_priority_score or 0 %}
+        {% set match = job.match_score or job.quick_score or 0 %}
+        <div class="kanban-card" id="kcard-{{ job.id }}">
+          <div class="kanban-card-title">{{ job.title[:42] }}{% if job.title|length > 42 %}…{% endif %}</div>
+          <div class="kanban-card-company">{{ job.company }}</div>
+          <div class="kanban-card-score">
+            <span class="score-mini ips" title="Income Priority">⚡{{ ips }}</span>
+            <span class="score-mini match" title="Match Score">◎{{ match }}</span>
+            {% if job.is_fast_pay %}
+            <span style="font-size:9px;color:#eab308;font-weight:700;">FAST PAY</span>
+            {% endif %}
+          </div>
+          <div class="kanban-card-meta">
+            {% if job.hourly_rate_max %}
+            <span class="kanban-badge" style="background:rgba(234,179,8,.12);color:#eab308;">€{{ job.hourly_rate_max }}/hr</span>
+            {% elif job.salary_max %}
+            <span class="kanban-badge" style="background:var(--green-dim);color:var(--green);">€{{ (job.salary_max // 1000)|int }}k</span>
+            {% endif %}
+            <span class="kanban-badge" style="background:var(--bg-input);color:var(--text-muted);">{{ job.source }}</span>
+            {% if job.is_europe_friendly %}
+            <span class="kanban-badge" style="background:var(--blue-dim);color:var(--blue);">🇪🇺</span>
+            {% endif %}
+          </div>
+          <select class="kanban-stage-select" onchange="moveStage({{ job.id }}, this.value, this)">
+            {% for stage in pipeline_stages %}
+            <option value="{{ stage }}" {% if stage == col.stage %}selected{% endif %}>
+              {{ stage_labels[stage] }}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="kanban-card-actions">
+            {% if col.stage in ('DISCOVERED', 'HIGH_MATCH', 'READY_TO_APPLY') %}
+            <button class="btn btn-primary btn-sm" onclick="applyWithAI({{ job.id }})">Apply</button>
+            {% endif %}
+            {% if job.source_url %}
+            <a href="{{ job.source_url }}" target="_blank" rel="noopener"
+               class="btn btn-ghost btn-sm">Open →</a>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="kanban-empty">No jobs in this stage</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Conversion Tracker -->
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px;">
+  <!-- Weekly Stats -->
+  <div class="card" style="padding:16px;">
+    <div class="section-title"><span>📊</span> Weekly Conversion</div>
+    {% if funnel.weekly %}
+    <table class="weekly-table">
+      <thead>
+        <tr>
+          <th>Week</th>
+          <th>Applied</th>
+          <th>Responses</th>
+          <th>Rate</th>
+          <th>Trend</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in funnel.weekly %}
+        <tr>
+          <td style="font-weight:600;color:var(--text-primary);">{{ w.label }}</td>
+          <td>{{ w.applied }}</td>
+          <td style="color:var(--green);">{{ w.responded }}</td>
+          <td>
+            {% if w.applied > 0 %}
+            <span style="color:var(--accent-light);font-weight:700;">{{ w.conversion_rate }}%</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="conversion-bar" style="width:{{ [w.conversion_rate * 2, 80]|min }}px;"></span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">
+      Apply to jobs to start tracking weekly conversions
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Learning Insights -->
+  <div class="card" style="padding:16px;">
+    <div class="section-title"><span>🧠</span> AI Learning Insights</div>
+    {% if insights.total_applied and insights.total_applied > 0 %}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+      <span class="insight-chip">
+        {{ insights.total_applied }} applications sent
+      </span>
+      <span class="insight-chip {% if insights.response_rate >= 30 %}{% else %}amber{% endif %}">
+        {{ insights.response_rate }}% response rate
+      </span>
+      {% if insights.best_proposal_type %}
+      <span class="insight-chip purple">
+        Best: {{ insights.best_proposal_type }}
+      </span>
+      {% endif %}
+    </div>
+    {% if insights.by_type %}
+    <table style="width:100%;font-size:11px;border-collapse:collapse;">
+      <tr>
+        <th style="text-align:left;color:var(--text-muted);padding:4px 8px;border-bottom:1px solid var(--border);">Type</th>
+        <th style="color:var(--text-muted);padding:4px 8px;border-bottom:1px solid var(--border);">Sent</th>
+        <th style="color:var(--text-muted);padding:4px 8px;border-bottom:1px solid var(--border);">Responses</th>
+      </tr>
+      {% for r in insights.by_type %}
+      <tr>
+        <td style="padding:5px 8px;color:var(--text-primary);">{{ r.proposal_type }}</td>
+        <td style="padding:5px 8px;text-align:center;">{{ r.sent }}</td>
+        <td style="padding:5px 8px;text-align:center;color:var(--green);">{{ r.received }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+    {% else %}
+    <div style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">
+      Apply to jobs to build your learning history
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── FAST APPLY MODAL ── -->
+<div class="modal-overlay" id="fastApplyModal" style="display:none;">
+  <div class="modal" style="max-width:680px; max-height:88vh; overflow-y:auto;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">⚡ Fast Apply — Top 5 Jobs</div>
+        <div class="modal-subtitle">AI-generated proposals ready to copy and submit</div>
+      </div>
+      <button class="modal-close" onclick="closeFastApply()">✕</button>
+    </div>
+    <div class="modal-body" id="fastApplyBody">
+      <div style="text-align:center;padding:40px;color:var(--text-secondary);">
+        Generating proposals for your top 5 income opportunities…
+        <div style="margin-top:12px;font-size:12px;">This may take 20–30 seconds.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── APPLY WITH AI MODAL ── -->
+<div class="modal-overlay" id="applyAIModal" style="display:none;">
+  <div class="modal" style="max-width:640px; max-height:88vh; overflow-y:auto;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="applyAITitle">Apply with AI</div>
+        <div class="modal-subtitle" id="applyAISub"></div>
+      </div>
+      <button class="modal-close" onclick="closeApplyAIModal()">✕</button>
+    </div>
+    <div class="modal-body" id="applyAIBody">
+      <div style="text-align:center;padding:30px;color:var(--text-secondary);">Loading…</div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Move pipeline stage ──────────────────────────────────────────────────────
+function moveStage(jobId, stage, selectEl) {
+  fetch(`/api/apply-pipeline/${jobId}/stage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage })
+  })
+    .then(r => r.json())
+    .then(data => {
+      showToast(`Moved to ${stage}`, 'success');
+      // Reload page to reflect kanban changes
+      setTimeout(() => location.reload(), 600);
+    })
+    .catch(err => { showToast('Error: ' + err.message, 'error'); });
+}
+
+// ── Apply with AI (open modal with proposal) ─────────────────────────────────
+let _currentApplyJobId = null;
+
+function applyWithAI(jobId) {
+  _currentApplyJobId = jobId;
+  document.getElementById('applyAIModal').style.display = 'flex';
+  document.getElementById('applyAITitle').textContent = 'Apply with AI';
+  document.getElementById('applyAISub').textContent = 'Loading job + generating proposal…';
+  document.getElementById('applyAIBody').innerHTML =
+    '<div style="text-align:center;padding:30px;color:var(--text-secondary);">Generating optimised proposal…</div>';
+
+  // Fetch job detail + generate proposal in parallel
+  Promise.all([
+    fetch(`/api/remote-jobs/${jobId}`).then(r => r.json()),
+    fetch(`/api/remote-jobs/${jobId}/proposal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'proposal' })
+    }).then(r => r.json())
+  ]).then(([job, proposalResult]) => {
+    renderApplyAIModal(job, proposalResult);
+  }).catch(err => {
+    document.getElementById('applyAIBody').innerHTML =
+      `<div style="color:var(--red);padding:20px;">Error: ${err.message}</div>`;
+  });
+}
+
+function generateAndApply(jobId) {
+  applyWithAI(jobId);
+}
+
+function renderApplyAIModal(job, proposalResult) {
+  document.getElementById('applyAITitle').textContent = job.title;
+  document.getElementById('applyAISub').textContent =
+    `${job.company} · ${job.job_type || ''} · Income Priority: ${job.income_priority_score || 0}/100`;
+
+  const salary = job.hourly_rate_max
+    ? `€${job.hourly_rate_max}/hr`
+    : job.salary_max ? `€${(job.salary_max||0).toLocaleString()}/yr` : 'Salary not listed';
+
+  document.getElementById('applyAIBody').innerHTML = `
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <span class="badge badge-${job.job_type||'fulltime'}">${job.job_type||'fulltime'}</span>
+        <span class="badge badge-${job.remote_type||'remote'}">${job.remote_type||'remote'}</span>
+        ${job.is_fast_pay ? '<span class="badge" style="background:rgba(234,179,8,.15);color:#eab308;">⚡ FAST PAY</span>' : ''}
+        ${job.is_europe_friendly ? '<span class="badge badge-europe">🇪🇺 Europe</span>' : ''}
+      </div>
+      <div style="font-size:13px;color:var(--text-primary);font-weight:600;">${salary}</div>
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+        ✦ AI-Optimised Proposal
+      </div>
+      <textarea id="proposalEdit" style="width:100%;min-height:200px;background:var(--bg-input);
+                border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;
+                color:var(--text-primary);font-size:12px;line-height:1.7;font-family:var(--font);resize:vertical;"
+      >${(proposalResult.content||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <button class="btn btn-primary btn-sm" onclick="copyProposal()">⧉ Copy Proposal</button>
+      ${job.source_url ? `<a href="${job.source_url}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">Open Job →</a>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="regenProposal('cover_letter')">Cover Letter</button>
+      <button class="btn btn-ghost btn-sm" onclick="regenProposal('outreach')">Outreach DM</button>
+      <button class="btn btn-ghost btn-sm" onclick="regenProposal('pitch')">Elevator Pitch</button>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:12px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">
+        Mark Outcome
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm"
+                onclick="markApplied(${job.id}, document.getElementById('proposalEdit').value)">
+          ✓ Mark Applied
+        </button>
+        <button class="btn btn-ghost btn-sm"
+                onclick="recordResponse(${job.id}, 'positive')">Got Response</button>
+        <button class="btn btn-ghost btn-sm"
+                onclick="recordResponse(${job.id}, 'interview')">Interview</button>
+        <button class="btn btn-ghost btn-sm"
+                onclick="recordResponse(${job.id}, 'offer')">Offer</button>
+      </div>
+    </div>
+  `;
+}
+
+function copyProposal() {
+  const ta = document.getElementById('proposalEdit');
+  if (!ta) return;
+  navigator.clipboard.writeText(ta.value).then(() => showToast('Proposal copied!', 'success'));
+}
+
+function regenProposal(type) {
+  if (!_currentApplyJobId) return;
+  document.getElementById('proposalEdit').value = 'Regenerating with AI…';
+  fetch(`/api/remote-jobs/${_currentApplyJobId}/proposal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type })
+  }).then(r => r.json())
+    .then(data => {
+      document.getElementById('proposalEdit').value = data.content;
+      showToast(`${type} generated`, 'success');
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+function markApplied(jobId, proposalContent) {
+  fetch(`/api/apply-pipeline/${jobId}/record-apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proposal_type: 'proposal', proposal_content: proposalContent })
+  }).then(r => r.json())
+    .then(() => {
+      showToast('Marked as applied! Pipeline advanced.', 'success');
+      closeApplyAIModal();
+      setTimeout(() => location.reload(), 800);
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+function recordResponse(jobId, responseType) {
+  fetch(`/api/apply-pipeline/${jobId}/response`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response_type: responseType })
+  }).then(r => r.json())
+    .then(data => {
+      showToast(`Response recorded: ${responseType} → ${data.new_stage}`, 'success');
+      closeApplyAIModal();
+      setTimeout(() => location.reload(), 800);
+    });
+}
+
+function closeApplyAIModal() {
+  document.getElementById('applyAIModal').style.display = 'none';
+}
+document.getElementById('applyAIModal').addEventListener('click', function(e) {
+  if (e.target === this) closeApplyAIModal();
+});
+
+// ── Fast Apply (top 5 batch) ──────────────────────────────────────────────────
+function openFastApply() {
+  document.getElementById('fastApplyModal').style.display = 'flex';
+  document.getElementById('fastApplyBody').innerHTML =
+    '<div style="text-align:center;padding:40px;color:var(--text-secondary);">Generating proposals for top 5 income opportunities… (20–40s)</div>';
+
+  fetch('/api/apply-pipeline/fast-apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ n: 5 })
+  }).then(r => r.json())
+    .then(data => renderFastApplyBatch(data.batch || []))
+    .catch(err => {
+      document.getElementById('fastApplyBody').innerHTML =
+        `<div style="color:var(--red);padding:20px;">Error: ${err.message}</div>`;
+    });
+}
+
+function renderFastApplyBatch(batch) {
+  if (!batch.length) {
+    document.getElementById('fastApplyBody').innerHTML =
+      '<div style="padding:30px;text-align:center;color:var(--text-muted);">No eligible jobs found. Sync jobs first.</div>';
+    return;
+  }
+  const html = batch.map((item, i) => `
+    <div class="fast-apply-step">
+      <div class="fast-apply-step-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="step-number">${i+1}</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--text-primary);">${item.title}</div>
+            <div style="font-size:11px;color:var(--text-secondary);">
+              ${item.company}
+              ${item.hourly_rate_max ? ` · <span style="color:#eab308;font-weight:700;">€${item.hourly_rate_max}/hr</span>` : ''}
+              ${item.salary_max && !item.hourly_rate_max ? ` · <span style="color:var(--green);">€${(item.salary_max||0).toLocaleString()}/yr</span>` : ''}
+            </div>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;color:var(--text-muted);">Income Score</div>
+          <div style="font-size:18px;font-weight:800;color:#eab308;">${item.income_priority_score}</div>
+        </div>
+      </div>
+      <div class="fast-apply-proposal" id="batchProposal${item.job_id}">${item.proposal}</div>
+      <div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm"
+                onclick="copyBatchProposal(${item.job_id})">⧉ Copy</button>
+        ${item.source_url ? `<a href="${item.source_url}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">Open Job →</a>` : ''}
+        <button class="btn btn-ghost btn-sm"
+                onclick="markBatchApplied(${item.job_id}, this)">✓ Mark Applied</button>
+        <button class="btn btn-ghost btn-sm"
+                onclick="skipBatchItem(${item.job_id}, this)">Skip</button>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('fastApplyBody').innerHTML =
+    `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;">
+       Work through each one: copy the proposal, open the link, apply, then mark as applied.
+     </div>` + html;
+}
+
+function copyBatchProposal(jobId) {
+  const el = document.getElementById('batchProposal' + jobId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => showToast('Copied!', 'success'));
+}
+
+function markBatchApplied(jobId, btn) {
+  const content = (document.getElementById('batchProposal' + jobId) || {}).textContent || '';
+  fetch(`/api/apply-pipeline/${jobId}/record-apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proposal_type: 'proposal', proposal_content: content })
+  }).then(() => {
+    btn.textContent = '✓ Applied!';
+    btn.style.background = 'var(--green-dim)';
+    btn.style.color = 'var(--green)';
+    showToast('Marked applied!', 'success');
+  });
+}
+
+function skipBatchItem(jobId, btn) {
+  const step = btn.closest('.fast-apply-step');
+  if (step) { step.style.opacity = '.4'; step.style.pointerEvents = 'none'; }
+}
+
+function closeFastApply() {
+  document.getElementById('fastApplyModal').style.display = 'none';
+}
+document.getElementById('fastApplyModal').addEventListener('click', function(e) {
+  if (e.target === this) closeFastApply();
+});
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+function dismissAlert(alertId) {
+  fetch('/api/apply-pipeline/alerts/read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: [alertId] })
+  }).then(() => {
+    const el = document.getElementById('alert-' + alertId);
+    if (el) el.remove();
+  });
+}
+
+function markAllAlertsRead() {
+  fetch('/api/apply-pipeline/alerts/read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(() => location.reload());
+}
+
+// ── Skip daily action ─────────────────────────────────────────────────────────
+function skipDailyAction(jobId, btn) {
+  const item = btn.closest('.daily-action-item');
+  if (item) {
+    item.style.opacity = '.3';
+    item.style.transition = 'opacity .3s';
+    setTimeout(() => item.style.display = 'none', 300);
+  }
+}
+
+// ── Open job detail from kanban (reuse remote_jobs handler) ─────────────────
+function openKanbanJobDetail(jobId) {
+  window.location.href = `/remote-jobs?open=${jobId}`;
+}
+
+// ── Toast fallback ────────────────────────────────────────────────────────────
+if (typeof showToast === 'undefined') {
+  window.showToast = function(msg, type='info') {
+    const colors = { success:'#10b981', error:'#ef4444', info:'#6366f1' };
+    const t = document.createElement('div');
+    t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 20px;
+      border-radius:10px;background:${colors[type]};color:#fff;font-size:13px;
+      font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:360px;`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(()=>t.remove(),300); }, 3500);
+  };
+}
+</script>
+{% endblock %}

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
+
+logger = logging.getLogger("secretaryai.main")
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
@@ -56,7 +59,7 @@ from app.services.user_mgmt import (
     update_job_profile, update_travel_profile,
 )
 from app.services.job_discovery import (
-    sync_all_sources as sync_remote_jobs,
+    sync_all_sources as _sync_remote_jobs_raw,
     list_remote_jobs, get_remote_job,
     save_job as discovery_save_job,
     hide_job as discovery_hide_job,
@@ -66,6 +69,29 @@ from app.services.job_discovery import (
     get_travel_widget, get_discovery_stats,
     get_proposals_for_job, list_applied_jobs,
 )
+from app.services.apply_engine import (
+    advance_pipeline, batch_advance_all_pipelines,
+    get_daily_actions, get_conversion_funnel,
+    check_and_create_alerts, get_unread_alerts, get_alert_count, mark_alerts_read,
+    fast_apply_batch, record_apply, record_response,
+    get_learning_insights, get_pipeline_kanban,
+    PIPELINE_STAGES, STAGE_COLORS, STAGE_LABELS,
+)
+
+
+def sync_remote_jobs() -> dict:
+    """Full sync: fetch jobs → score pipeline → create alerts."""
+    result = _sync_remote_jobs_raw()
+    try:
+        batch_advance_all_pipelines()
+    except Exception as exc:
+        logger.warning("Pipeline batch advance failed: %s", exc)
+    try:
+        new_alerts = check_and_create_alerts()
+        result["new_alerts"] = new_alerts
+    except Exception as exc:
+        logger.warning("Alert check failed: %s", exc)
+    return result
 from config import STATIC_DIR, TEMPLATES_DIR
 
 app = FastAPI(title="SecretaryAI — Executive Travel & Job Search Secretary")
@@ -1123,5 +1149,139 @@ def api_generate_proposal(job_id: int, payload: dict):
         return generate_proposal(job_id, proposal_type)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ─── APPLY PIPELINE ENGINE ────────────────────────────────────────────────────
+
+class ResponsePayload(BaseModel):
+    response_type: str
+    notes: str = ""
+
+
+class RecordApplyPayload(BaseModel):
+    proposal_type: str = "proposal"
+    proposal_content: str = ""
+
+
+@app.get("/apply-pipeline", response_class=HTMLResponse)
+def apply_pipeline_page(request: Request):
+    try:
+        kanban = get_pipeline_kanban()
+        daily = get_daily_actions(10)
+        funnel = get_conversion_funnel()
+        alerts = get_unread_alerts(limit=10)
+        alert_count = get_alert_count()
+        insights = get_learning_insights()
+    except Exception as exc:
+        logger.error("Pipeline page error: %s", exc)
+        kanban = {"stages": []}
+        daily = []
+        funnel = {"funnel": [], "weekly": [], "totals": {}, "proposal_insights": []}
+        alerts = []
+        alert_count = 0
+        insights = {}
+
+    # sidebar context
+    pipeline_summary = None
+    try:
+        from app.services.pipeline import get_pipeline_summary
+        pipeline_summary = get_pipeline_summary()
+    except Exception:
+        pass
+    jobs_to_review = count_pending_review()
+    try:
+        from app.services.reminders import list_reminders
+        reminders_due = len([r for r in list_reminders() if r.get("status") == "pending"])
+    except Exception:
+        reminders_due = 0
+
+    return templates.TemplateResponse(
+        "apply_pipeline.html",
+        {
+            "request": request,
+            "active_page": "apply_pipeline",
+            "kanban": kanban,
+            "daily_actions": daily,
+            "funnel": funnel,
+            "alerts": alerts,
+            "alert_count": alert_count,
+            "insights": insights,
+            "pipeline_stages": PIPELINE_STAGES,
+            "stage_colors": STAGE_COLORS,
+            "stage_labels": STAGE_LABELS,
+            "pipeline_summary": pipeline_summary,
+            "jobs_to_review": jobs_to_review,
+            "reminders_due": reminders_due,
+        },
+    )
+
+
+@app.get("/api/apply-pipeline/kanban")
+def api_kanban():
+    return get_pipeline_kanban()
+
+
+@app.get("/api/apply-pipeline/daily-actions")
+def api_daily_actions(n: int = 10):
+    return get_daily_actions(n)
+
+
+@app.get("/api/apply-pipeline/funnel")
+def api_funnel():
+    return get_conversion_funnel()
+
+
+@app.get("/api/apply-pipeline/alerts")
+def api_alerts():
+    return {"alerts": get_unread_alerts(), "count": get_alert_count()}
+
+
+@app.post("/api/apply-pipeline/alerts/read")
+def api_mark_alerts_read(payload: dict):
+    ids = payload.get("ids")  # list[int] or None (None = mark all)
+    return mark_alerts_read(ids)
+
+
+@app.get("/api/apply-pipeline/insights")
+def api_learning_insights():
+    return get_learning_insights()
+
+
+@app.post("/api/apply-pipeline/{job_id}/stage")
+def api_set_stage(job_id: int, payload: dict):
+    stage = (payload.get("stage") or "").strip().upper()
+    if stage not in PIPELINE_STAGES:
+        raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of {PIPELINE_STAGES}")
+    try:
+        new_stage = advance_pipeline(job_id, stage)
+        return {"job_id": job_id, "pipeline_stage": new_stage}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/api/apply-pipeline/{job_id}/record-apply")
+def api_record_apply(job_id: int, payload: RecordApplyPayload):
+    try:
+        hist_id = record_apply(job_id, payload.proposal_type, payload.proposal_content)
+        return {"job_id": job_id, "apply_history_id": hist_id, "pipeline_stage": "APPLIED"}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/apply-pipeline/{job_id}/response")
+def api_record_response(job_id: int, payload: ResponsePayload):
+    try:
+        return record_response(job_id, payload.response_type, payload.notes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/apply-pipeline/fast-apply")
+def api_fast_apply(payload: dict):
+    n = min(int(payload.get("n", 5)), 10)
+    try:
+        return {"batch": fast_apply_batch(n)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
