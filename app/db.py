@@ -400,7 +400,7 @@ CREATE TABLE IF NOT EXISTS smart_alerts (
 
 CREATE TABLE IF NOT EXISTS outreach_companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
     domain TEXT,
     linkedin_url TEXT,
     website TEXT,
@@ -415,7 +415,6 @@ CREATE TABLE IF NOT EXISTS outreach_companies (
     notes TEXT,
     last_contacted_at TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(LOWER(name)),
     FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
 );
 
