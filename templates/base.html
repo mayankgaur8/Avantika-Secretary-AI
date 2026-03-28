@@ -36,6 +36,9 @@
 
       <div class="nav-section">
         <span class="nav-label">Career</span>
+        <a href="/remote-jobs" class="nav-item {% if active_page == 'remote_jobs' %}active{% endif %}">
+          <span class="nav-icon">◎</span> Remote Jobs
+        </a>
         <a href="/jobs/review" class="nav-item {% if active_page == 'review' %}active{% endif %}">
           <span class="nav-icon">◈</span> New Jobs
           {% if jobs_to_review and jobs_to_review > 0 %}

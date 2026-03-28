@@ -1,0 +1,937 @@
+{% extends "base.html" %}
+
+{% block title %}Remote Jobs & Freelance — Avantika SecretaryAI{% endblock %}
+
+{% block page_title %}Remote Jobs{% endblock %}
+{% block page_subtitle %}Discover, match, and apply to remote/contract roles that fund your Europe move{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-ghost btn-sm" id="syncBtn" onclick="syncJobs()">
+  <span id="syncIcon">⟳</span> Sync Now
+</button>
+<a href="/chat" class="btn btn-primary btn-sm"><span>✦</span> Ask AI</a>
+{% endblock %}
+
+{% block head %}
+<style>
+/* ── Remote Jobs Module styles ── */
+.rj-stats-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.rj-stat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  text-align: center;
+}
+.rj-stat-num { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+.rj-stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: .04em; }
+.rj-stat.accent .rj-stat-num { color: var(--accent-light); }
+.rj-stat.green .rj-stat-num { color: var(--green); }
+.rj-stat.amber .rj-stat-num { color: var(--amber); }
+.rj-stat.cyan .rj-stat-num { color: var(--cyan); }
+.rj-stat.purple .rj-stat-num { color: var(--purple); }
+
+.rj-layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start; }
+@media (max-width: 1024px) { .rj-layout { grid-template-columns: 1fr; } }
+
+.travel-widget {
+  background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08));
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: var(--radius);
+  padding: 18px;
+  position: sticky; top: 20px;
+}
+.travel-widget-title {
+  font-size: 13px; font-weight: 700; color: var(--accent-light);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+}
+.tw-item {
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.tw-item:last-child { border-bottom: none; padding-bottom: 0; }
+.tw-job-title { font-size: 12px; font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.tw-company { font-size: 11px; color: var(--text-secondary); }
+.tw-earn { font-size: 13px; font-weight: 700; color: var(--green); }
+.tw-earn-label { font-size: 10px; color: var(--text-muted); }
+.tw-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+
+.filters-bar {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+}
+.filters-bar form { display: contents; }
+.filter-group { display: flex; flex-direction: column; gap: 3px; }
+.filter-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.filter-select, .filter-input {
+  background: var(--bg-input); border: 1px solid var(--border-light);
+  color: var(--text-primary); border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; outline: none;
+  min-width: 110px;
+}
+.filter-select:focus, .filter-input:focus { border-color: var(--accent); }
+.filter-search { min-width: 200px; }
+.filter-apply-btn { margin-top: auto; }
+
+.jobs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.job-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: border-color .15s, transform .1s;
+  position: relative;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.job-card:hover { border-color: var(--border-light); transform: translateY(-1px); }
+.job-card.saved-card { border-color: rgba(99,102,241,0.4); }
+.job-card.applied-card { border-color: rgba(16,185,129,0.4); }
+
+.job-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.job-card-title { font-size: 13px; font-weight: 700; color: var(--text-primary); line-height: 1.35; flex: 1; }
+.match-badge {
+  min-width: 38px; height: 38px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800; flex-shrink: 0;
+  border: 2px solid;
+}
+.match-high { background: rgba(16,185,129,.15); border-color: var(--green); color: var(--green); }
+.match-mid  { background: rgba(245,158,11,.12); border-color: var(--amber); color: var(--amber); }
+.match-low  { background: rgba(92,97,128,.15);  border-color: var(--border-light); color: var(--text-secondary); }
+
+.job-card-company { font-size: 12px; color: var(--text-secondary); }
+.job-card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.badge-remote  { background: var(--blue-dim);   color: var(--blue); }
+.badge-contract { background: var(--purple-dim); color: var(--purple); }
+.badge-freelance { background: var(--cyan-dim);  color: var(--cyan); }
+.badge-fulltime { background: var(--accent-dim); color: var(--accent-light); }
+.badge-parttime { background: var(--amber-dim);  color: var(--amber); }
+.badge-europe  { background: var(--green-dim);   color: var(--green); }
+.badge-travel  { background: linear-gradient(90deg, rgba(168,85,247,.2), rgba(99,102,241,.2)); color: var(--accent-light); }
+.badge-source  { background: var(--bg-input);    color: var(--text-muted); }
+.badge-saved   { background: rgba(99,102,241,.2); color: var(--accent-light); }
+.badge-applied { background: var(--green-dim);   color: var(--green); }
+
+.job-card-salary { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.job-card-salary span { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+.job-card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag-pill {
+  padding: 2px 7px; border-radius: 4px; font-size: 10px;
+  background: var(--bg-input); color: var(--text-secondary); border: 1px solid var(--border);
+}
+.job-card-actions { display: flex; gap: 6px; margin-top: auto; flex-wrap: wrap; }
+.job-card-actions .btn { flex: 1; min-width: 60px; font-size: 11px; padding: 6px 8px; }
+
+.no-jobs {
+  grid-column: 1 / -1; text-align: center; padding: 60px 20px;
+  color: var(--text-secondary);
+}
+.no-jobs-icon { font-size: 3rem; margin-bottom: 12px; }
+.no-jobs-title { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+
+.tab-bar { display: flex; gap: 2px; margin-bottom: 16px; }
+.tab-btn {
+  padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  background: transparent; color: var(--text-secondary); border: 1px solid transparent;
+  cursor: pointer; transition: all .15s;
+}
+.tab-btn.active { background: var(--accent-dim); color: var(--accent-light); border-color: rgba(99,102,241,.3); }
+.tab-btn:hover:not(.active) { background: var(--bg-card); color: var(--text-primary); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Tracker table */
+.tracker-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tracker-table th { padding: 8px 12px; text-align: left; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.tracker-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: top; }
+.tracker-table tr:last-child td { border-bottom: none; }
+.tracker-table tr:hover td { background: var(--bg-card-hover); }
+.status-chip { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.status-applied      { background: var(--blue-dim);   color: var(--blue); }
+.status-interviewing { background: var(--amber-dim);  color: var(--amber); }
+.status-offer        { background: var(--green-dim);  color: var(--green); }
+.status-rejected     { background: var(--red-dim);    color: var(--red); }
+.status-closed       { background: var(--bg-input);   color: var(--text-muted); }
+
+/* Proposal modal */
+.proposal-content {
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 16px;
+  font-size: 13px; line-height: 1.7; color: var(--text-primary);
+  white-space: pre-wrap; max-height: 400px; overflow-y: auto;
+  margin-top: 12px;
+}
+.proposal-types { display: flex; gap: 8px; flex-wrap: wrap; }
+.proposal-type-btn {
+  padding: 7px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  background: var(--bg-input); color: var(--text-secondary);
+  border: 1px solid var(--border); cursor: pointer; transition: all .15s;
+}
+.proposal-type-btn:hover, .proposal-type-btn.active { background: var(--accent-dim); color: var(--accent-light); border-color: rgba(99,102,241,.4); }
+
+/* Job detail modal overrides */
+.jd-section { margin-bottom: 16px; }
+.jd-section-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+.jd-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.7; max-height: 180px; overflow-y: auto; }
+.match-reasons-list { list-style: none; padding: 0; }
+.match-reasons-list li { padding: 3px 0; font-size: 12px; color: var(--text-secondary); }
+.match-reasons-list li::before { content: "✓ "; color: var(--green); }
+.missing-list li::before { content: "△ "; color: var(--amber); }
+
+.pagination { display: flex; align-items: center; gap: 8px; margin-top: 20px; justify-content: center; }
+.page-btn { padding: 6px 14px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: none; transition: all .15s; }
+.page-btn:hover { border-color: var(--accent); color: var(--accent-light); }
+.page-btn.current { background: var(--accent-dim); color: var(--accent-light); border-color: rgba(99,102,241,.4); }
+.page-info { font-size: 12px; color: var(--text-muted); }
+
+.sync-info { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.spinning { animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats Bar -->
+<div class="rj-stats-bar">
+  <div class="rj-stat accent">
+    <div class="rj-stat-num" id="statTotal">{{ stats.total }}</div>
+    <div class="rj-stat-label">Total Jobs</div>
+  </div>
+  <div class="rj-stat green">
+    <div class="rj-stat-num">{{ stats.high_match }}</div>
+    <div class="rj-stat-label">High Match ≥70</div>
+  </div>
+  <div class="rj-stat purple">
+    <div class="rj-stat-num">{{ stats.europe_friendly }}</div>
+    <div class="rj-stat-label">Europe Friendly</div>
+  </div>
+  <div class="rj-stat amber">
+    <div class="rj-stat-num">{{ stats.saved }}</div>
+    <div class="rj-stat-label">Saved</div>
+  </div>
+  <div class="rj-stat cyan">
+    <div class="rj-stat-num">{{ stats.applied }}</div>
+    <div class="rj-stat-label">Applied</div>
+  </div>
+</div>
+{% if stats.last_sync %}
+<div class="sync-info">Last synced: {{ stats.last_sync }}</div>
+{% endif %}
+
+<!-- Tabs -->
+<div class="tab-bar" style="margin-top: 16px;">
+  <button class="tab-btn active" onclick="switchTab('discover', this)">◈ Discover Jobs</button>
+  <button class="tab-btn" onclick="switchTab('tracker', this)">✓ Application Tracker</button>
+  <button class="tab-btn" onclick="switchTab('saved', this)">◆ Saved Jobs</button>
+</div>
+
+<!-- ── TAB: DISCOVER ── -->
+<div id="tab-discover" class="tab-panel active">
+  <div class="rj-layout">
+
+    <!-- Left: Filters + Grid -->
+    <div>
+      <!-- Filters Bar -->
+      <div class="filters-bar">
+        <form method="get" action="/remote-jobs" style="display:contents">
+          <div class="filter-group">
+            <div class="filter-label">Search</div>
+            <input class="filter-input filter-search" type="text" name="search"
+                   placeholder="java, spring, contract…" value="{{ filters.search or '' }}">
+          </div>
+          <div class="filter-group">
+            <div class="filter-label">Source</div>
+            <select class="filter-select" name="source">
+              <option value="">All Sources</option>
+              <option value="remotive" {% if filters.source=='remotive' %}selected{% endif %}>Remotive</option>
+              <option value="adzuna" {% if filters.source=='adzuna' %}selected{% endif %}>Adzuna</option>
+              <option value="jsearch" {% if filters.source=='jsearch' %}selected{% endif %}>JSearch</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <div class="filter-label">Job Type</div>
+            <select class="filter-select" name="job_type">
+              <option value="">All Types</option>
+              <option value="contract" {% if filters.job_type=='contract' %}selected{% endif %}>Contract</option>
+              <option value="freelance" {% if filters.job_type=='freelance' %}selected{% endif %}>Freelance</option>
+              <option value="fulltime" {% if filters.job_type=='fulltime' %}selected{% endif %}>Full-time</option>
+              <option value="parttime" {% if filters.job_type=='parttime' %}selected{% endif %}>Part-time</option>
+              <option value="consulting" {% if filters.job_type=='consulting' %}selected{% endif %}>Consulting</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <div class="filter-label">Sort By</div>
+            <select class="filter-select" name="sort_by">
+              <option value="relevance" {% if filters.sort_by=='relevance' %}selected{% endif %}>Relevance</option>
+              <option value="newest" {% if filters.sort_by=='newest' %}selected{% endif %}>Newest</option>
+              <option value="salary" {% if filters.sort_by=='salary' %}selected{% endif %}>Salary</option>
+              <option value="europe" {% if filters.sort_by=='europe' %}selected{% endif %}>Europe-Friendly</option>
+              <option value="travel_fund" {% if filters.sort_by=='travel_fund' %}selected{% endif %}>Travel Fund</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <div class="filter-label">Region</div>
+            <select class="filter-select" name="europe_only">
+              <option value="">Worldwide</option>
+              <option value="1" {% if filters.europe_only=='1' %}selected{% endif %}>Europe Only</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <div class="filter-label">Min Score</div>
+            <select class="filter-select" name="min_score">
+              <option value="0" {% if filters.min_score==0 %}selected{% endif %}>Any</option>
+              <option value="60" {% if filters.min_score==60 %}selected{% endif %}>60+</option>
+              <option value="70" {% if filters.min_score==70 %}selected{% endif %}>70+</option>
+              <option value="80" {% if filters.min_score==80 %}selected{% endif %}>80+</option>
+            </select>
+          </div>
+          <div class="filter-group" style="justify-content: flex-end;">
+            <div class="filter-label">&nbsp;</div>
+            <button type="submit" class="btn btn-primary btn-sm filter-apply-btn">Filter</button>
+          </div>
+          {% if filters.search or filters.source or filters.job_type or filters.europe_only or filters.min_score %}
+          <a href="/remote-jobs" class="btn btn-ghost btn-sm" style="margin-top: auto;">✕ Clear</a>
+          {% endif %}
+        </form>
+      </div>
+
+      <!-- Jobs Count -->
+      <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+        Showing {{ jobs|length }} of {{ pagination.total }} jobs
+        {% if pagination.pages > 1 %} — page {{ pagination.page }} of {{ pagination.pages }}{% endif %}
+      </div>
+
+      <!-- Jobs Grid -->
+      <div class="jobs-grid" id="jobsGrid">
+        {% for job in jobs %}
+        {% set score = job.match_score or job.quick_score or 0 %}
+        {% set badge_class = 'match-high' if score >= 75 else ('match-mid' if score >= 55 else 'match-low') %}
+        <div class="job-card
+          {% if job.is_saved %}saved-card{% endif %}
+          {% if job.application_status == 'applied' %}applied-card{% endif %}"
+          id="jcard-{{ job.id }}">
+
+          <div class="job-card-header">
+            <div class="job-card-title">{{ job.title }}</div>
+            <div class="match-badge {{ badge_class }}" title="Match score">{{ score }}</div>
+          </div>
+
+          <div class="job-card-company">
+            {{ job.company }}
+            {% if job.posted_at %}
+            <span style="color:var(--text-muted)"> · {{ job.posted_at[:10] if job.posted_at else '' }}</span>
+            {% endif %}
+          </div>
+
+          <div class="job-card-meta">
+            {% if job.remote_type %}
+            <span class="badge badge-{{ job.remote_type }}">{{ job.remote_type }}</span>
+            {% endif %}
+            {% if job.job_type %}
+            <span class="badge badge-{{ job.job_type }}">{{ job.job_type }}</span>
+            {% endif %}
+            {% if job.is_europe_friendly %}
+            <span class="badge badge-europe">🇪🇺 Europe</span>
+            {% endif %}
+            {% if job.travel_fund_score and job.travel_fund_score >= 70 %}
+            <span class="badge badge-travel">✈ Travel Fund</span>
+            {% endif %}
+            <span class="badge badge-source">{{ job.source }}</span>
+            {% if job.is_saved %}
+            <span class="badge badge-saved">◆ Saved</span>
+            {% endif %}
+            {% if job.application_status == 'applied' %}
+            <span class="badge badge-applied">✓ Applied</span>
+            {% endif %}
+          </div>
+
+          {% if job.salary_max or job.hourly_rate_max %}
+          <div class="job-card-salary">
+            {% if job.hourly_rate_max %}
+              €{{ job.hourly_rate_min or job.hourly_rate_max }}–€{{ job.hourly_rate_max }}/hr
+              {% if job.hourly_rate_max %}
+              <span>≈ €{{ ((job.hourly_rate_min or job.hourly_rate_max) * 160)|int }}/mo</span>
+              {% endif %}
+            {% elif job.salary_max %}
+              {{ job.salary_currency }} {{ "{:,}".format(job.salary_min or 0) }}–{{ "{:,}".format(job.salary_max) }}/yr
+              <span>≈ €{{ (job.salary_max // 12)|int }}/mo</span>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {% if job.location %}
+          <div style="font-size:11px; color:var(--text-muted)">📍 {{ job.location }}</div>
+          {% endif %}
+
+          {% if job.tags_list %}
+          <div class="job-card-tags">
+            {% for tag in job.tags_list[:5] %}
+            <span class="tag-pill">{{ tag }}</span>
+            {% endfor %}
+            {% if job.tags_list|length > 5 %}
+            <span class="tag-pill">+{{ job.tags_list|length - 5 }}</span>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          <div class="job-card-actions">
+            <button class="btn btn-ghost btn-sm" onclick="saveJob({{ job.id }}, this)"
+                    title="{{ 'Unsave' if job.is_saved else 'Save' }}">
+              {{ '◆' if job.is_saved else '◇' }} Save
+            </button>
+            {% if job.application_status not in ('applied', 'interviewing', 'offer') %}
+            <button class="btn btn-ghost btn-sm" onclick="markApplied({{ job.id }}, this)" title="Mark Applied">
+              ✓ Applied
+            </button>
+            {% else %}
+            <span class="badge badge-applied" style="padding:6px 8px;">✓ Applied</span>
+            {% endif %}
+            <button class="btn btn-ghost btn-sm" onclick="openJobDetail({{ job.id }})" title="View Details">
+              ⊞ Details
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="hideJob({{ job.id }}, this)" title="Hide job">
+              ✕
+            </button>
+          </div>
+        </div>
+        {% else %}
+        <div class="no-jobs">
+          <div class="no-jobs-icon">◈</div>
+          <div class="no-jobs-title">No jobs found</div>
+          <p>Try different filters or sync to fetch fresh jobs.</p>
+          <button class="btn btn-primary" onclick="syncJobs()" style="margin-top:12px">
+            ⟳ Sync Jobs Now
+          </button>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Pagination -->
+      {% if pagination.pages > 1 %}
+      <div class="pagination">
+        {% if pagination.page > 1 %}
+        <a href="?{{ request.url.query }}&page={{ pagination.page - 1 }}" class="page-btn">‹ Prev</a>
+        {% endif %}
+        {% for p in range([1, pagination.page - 2]|max, [pagination.pages + 1, pagination.page + 3]|min) %}
+        <a href="?{{ request.url.query }}&page={{ p }}"
+           class="page-btn {% if p == pagination.page %}current{% endif %}">{{ p }}</a>
+        {% endfor %}
+        {% if pagination.page < pagination.pages %}
+        <a href="?{{ request.url.query }}&page={{ pagination.page + 1 }}" class="page-btn">Next ›</a>
+        {% endif %}
+        <span class="page-info">{{ pagination.total }} total</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Right: Travel Fund Widget -->
+    <div>
+      <div class="travel-widget">
+        <div class="travel-widget-title">
+          <span>✈</span> Best for Europe Travel Fund
+        </div>
+        {% if travel_widget %}
+        {% for tw in travel_widget %}
+        <div class="tw-item">
+          <div class="tw-job-title">{{ tw.title[:45] }}{% if tw.title|length > 45 %}…{% endif %}</div>
+          <div class="tw-company">{{ tw.company }}</div>
+          <div class="tw-badges">
+            <span class="badge badge-{{ tw.job_type or 'fulltime' }}">{{ tw.job_type or 'fulltime' }}</span>
+            {% if tw.is_europe_friendly or tw.is_europe_friendly == 1 %}
+            <span class="badge badge-europe">🇪🇺</span>
+            {% endif %}
+          </div>
+          {% if tw.monthly_eur and tw.monthly_eur > 0 %}
+          <div>
+            <span class="tw-earn">€{{ "{:,}".format(tw.monthly_eur|int) }}</span>
+            <span class="tw-earn-label">/month est.</span>
+          </div>
+          {% endif %}
+          <div style="margin-top:4px; display:flex; gap:6px;">
+            {% if tw.source_url %}
+            <a href="{{ tw.source_url }}" target="_blank" rel="noopener"
+               class="btn btn-ghost btn-sm" style="font-size:10px; padding:3px 8px;">Apply →</a>
+            {% endif %}
+            <button class="btn btn-ghost btn-sm"
+                    onclick="openJobDetail({{ tw.id }})"
+                    style="font-size:10px; padding:3px 8px;">Details</button>
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div style="font-size:12px; color:var(--text-muted); text-align:center; padding:20px 0;">
+          Sync jobs to see travel fund opportunities
+        </div>
+        {% endif %}
+        <button onclick="syncJobs()" class="btn btn-primary btn-sm" style="width:100%; margin-top:14px; font-size:11px;">
+          ⟳ Refresh Opportunities
+        </button>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="card" style="margin-top: 14px; padding: 14px;">
+        <div style="font-size:12px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px;">Quick AI Actions</div>
+        <div style="display:flex; flex-direction:column; gap:7px;">
+          <button class="btn btn-ghost btn-sm" onclick="askAI('show me top 10 Java remote jobs')">Top Java Remote Jobs</button>
+          <button class="btn btn-ghost btn-sm" onclick="askAI('find Europe-friendly backend contracts')">Europe Contracts</button>
+          <button class="btn btn-ghost btn-sm" onclick="askAI('show high-paying freelance gigs this week')">High-Paying Freelance</button>
+          <button class="btn btn-ghost btn-sm" onclick="askAI('what should I apply to first?')">What to Apply First?</button>
+          <button class="btn btn-ghost btn-sm" onclick="askAI('which jobs match me best this week?')">Best Match This Week</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── TAB: TRACKER ── -->
+<div id="tab-tracker" class="tab-panel">
+  <div class="card" style="padding: 0; overflow: hidden;">
+    {% if applied_jobs %}
+    <table class="tracker-table">
+      <thead>
+        <tr>
+          <th>Role / Company</th>
+          <th>Source</th>
+          <th>Status</th>
+          <th>Applied</th>
+          <th>Follow-up</th>
+          <th>Salary Discussed</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aj in applied_jobs %}
+        <tr id="tracker-{{ aj.id }}">
+          <td>
+            <div style="font-weight:600; color:var(--text-primary); font-size:12px;">{{ aj.title }}</div>
+            <div style="color:var(--text-muted); font-size:11px;">{{ aj.company }}</div>
+          </td>
+          <td><span class="badge badge-source">{{ aj.source }}</span></td>
+          <td>
+            <span class="status-chip status-{{ aj.application_status }}">
+              {{ aj.application_status }}
+            </span>
+          </td>
+          <td style="font-size:11px;">{{ aj.applied_at[:10] if aj.applied_at else '—' }}</td>
+          <td style="font-size:11px;">{{ aj.follow_up_date[:10] if aj.follow_up_date else '—' }}</td>
+          <td style="font-size:11px;">
+            {% if aj.salary_discussed %}€{{ "{:,}".format(aj.salary_discussed) }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <div style="display:flex; gap:5px; flex-wrap:wrap;">
+              <select class="filter-select" style="font-size:11px; padding:3px 6px; min-width:90px;"
+                      onchange="updateStatus({{ aj.id }}, this.value)">
+                <option value="">Update…</option>
+                <option value="applied">Applied</option>
+                <option value="interviewing">Interviewing</option>
+                <option value="offer">Offer</option>
+                <option value="rejected">Rejected</option>
+                <option value="closed">Closed</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" style="font-size:10px;"
+                      onclick="openJobDetail({{ aj.id }})">Details</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center; padding:40px; color:var(--text-secondary);">
+      No applications tracked yet. Mark jobs as Applied from the Discover tab.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── TAB: SAVED ── -->
+<div id="tab-saved" class="tab-panel">
+  <div class="jobs-grid">
+    {% for job in jobs if job.is_saved %}
+    {% set score = job.match_score or job.quick_score or 0 %}
+    {% set badge_class = 'match-high' if score >= 75 else ('match-mid' if score >= 55 else 'match-low') %}
+    <div class="job-card saved-card" id="jcard-saved-{{ job.id }}">
+      <div class="job-card-header">
+        <div class="job-card-title">{{ job.title }}</div>
+        <div class="match-badge {{ badge_class }}">{{ score }}</div>
+      </div>
+      <div class="job-card-company">{{ job.company }}</div>
+      <div class="job-card-meta">
+        <span class="badge badge-{{ job.job_type or 'fulltime' }}">{{ job.job_type or 'fulltime' }}</span>
+        {% if job.is_europe_friendly %}<span class="badge badge-europe">🇪🇺 Europe</span>{% endif %}
+        <span class="badge badge-source">{{ job.source }}</span>
+      </div>
+      {% if job.salary_max or job.hourly_rate_max %}
+      <div class="job-card-salary">
+        {% if job.hourly_rate_max %}€{{ job.hourly_rate_min or job.hourly_rate_max }}–€{{ job.hourly_rate_max }}/hr
+        {% else %}{{ job.salary_currency }} {{ "{:,}".format(job.salary_max) }}/yr{% endif %}
+      </div>
+      {% endif %}
+      <div class="job-card-actions">
+        <button class="btn btn-primary btn-sm" onclick="openJobDetail({{ job.id }})">⊞ View &amp; Apply</button>
+        <button class="btn btn-ghost btn-sm" onclick="saveJob({{ job.id }}, this)">◆ Unsave</button>
+      </div>
+    </div>
+    {% else %}
+    <div class="no-jobs" style="grid-column:1/-1">
+      <div class="no-jobs-icon">◇</div>
+      <div class="no-jobs-title">No saved jobs yet</div>
+      <p>Save jobs from the Discover tab to track them here.</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ── JOB DETAIL MODAL ── -->
+<div class="modal-overlay" id="remoteJobModal" style="display:none">
+  <div class="modal" style="max-width:640px; max-height:88vh; overflow-y:auto;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="rjModalTitle">Loading…</div>
+        <div class="modal-subtitle" id="rjModalSub"></div>
+      </div>
+      <button class="modal-close" onclick="closeRJModal()">✕</button>
+    </div>
+    <div class="modal-body" id="rjModalBody">
+      <!-- dynamic content -->
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Tab management ──────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── Sync ────────────────────────────────────────────────────────────────────
+function syncJobs() {
+  const btn = document.getElementById('syncBtn');
+  const icon = document.getElementById('syncIcon');
+  if (btn) { btn.disabled = true; }
+  if (icon) { icon.classList.add('spinning'); }
+  showToast('Syncing remote jobs from all sources…', 'info');
+
+  fetch('/api/remote-jobs/sync', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      const msg = `Sync complete: ${data.total_new || 0} new jobs added.`;
+      showToast(msg, 'success');
+      setTimeout(() => location.reload(), 800);
+    })
+    .catch(err => {
+      showToast('Sync failed: ' + err.message, 'error');
+      if (btn) { btn.disabled = false; }
+      if (icon) { icon.classList.remove('spinning'); }
+    });
+}
+
+// ── Save ────────────────────────────────────────────────────────────────────
+function saveJob(jobId, btn) {
+  fetch(`/api/remote-jobs/${jobId}/save`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      const card = document.getElementById(`jcard-${jobId}`);
+      if (data.is_saved) {
+        btn.textContent = '◆ Unsave';
+        card && card.classList.add('saved-card');
+        showToast('Job saved!', 'success');
+      } else {
+        btn.textContent = '◇ Save';
+        card && card.classList.remove('saved-card');
+        showToast('Job unsaved', 'info');
+      }
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Hide ────────────────────────────────────────────────────────────────────
+function hideJob(jobId, btn) {
+  if (!confirm('Hide this job? It will not appear in future listings.')) return;
+  fetch(`/api/remote-jobs/${jobId}/hide`, { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      const card = document.getElementById(`jcard-${jobId}`);
+      if (card) {
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.95)';
+        card.style.transition = 'all .3s';
+        setTimeout(() => card.remove(), 300);
+      }
+      showToast('Job hidden', 'info');
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Mark Applied ────────────────────────────────────────────────────────────
+function markApplied(jobId, btn) {
+  fetch(`/api/remote-jobs/${jobId}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'applied' })
+  })
+    .then(r => r.json())
+    .then(() => {
+      btn.outerHTML = '<span class="badge badge-applied" style="padding:6px 8px;">✓ Applied</span>';
+      const card = document.getElementById(`jcard-${jobId}`);
+      card && card.classList.add('applied-card');
+      showToast('Marked as applied!', 'success');
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Update Status (tracker) ─────────────────────────────────────────────────
+function updateStatus(jobId, status) {
+  if (!status) return;
+  fetch(`/api/remote-jobs/${jobId}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  })
+    .then(r => r.json())
+    .then(() => {
+      showToast(`Status updated to ${status}`, 'success');
+      const chip = document.querySelector(`#tracker-${jobId} .status-chip`);
+      if (chip) {
+        chip.className = `status-chip status-${status}`;
+        chip.textContent = status;
+      }
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── AI Ask ──────────────────────────────────────────────────────────────────
+function askAI(query) {
+  window.location.href = `/chat?q=${encodeURIComponent(query)}`;
+}
+
+// ── Job Detail Modal ─────────────────────────────────────────────────────────
+let _currentJobId = null;
+
+function openJobDetail(jobId) {
+  _currentJobId = jobId;
+  document.getElementById('remoteJobModal').style.display = 'flex';
+  document.getElementById('rjModalTitle').textContent = 'Loading…';
+  document.getElementById('rjModalBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">Loading job details…</div>';
+
+  fetch(`/api/remote-jobs/${jobId}`)
+    .then(r => r.json())
+    .then(job => renderJobModal(job))
+    .catch(err => {
+      document.getElementById('rjModalBody').innerHTML = `<div style="color:var(--red);padding:20px">${err.message}</div>`;
+    });
+}
+
+function renderJobModal(job) {
+  document.getElementById('rjModalTitle').textContent = job.title;
+  document.getElementById('rjModalSub').textContent = job.company + (job.location ? ' · ' + job.location : '');
+
+  const score = job.match_score || job.quick_score || 0;
+  const scoreColor = score >= 75 ? 'var(--green)' : score >= 55 ? 'var(--amber)' : 'var(--text-secondary)';
+
+  let salaryHtml = '';
+  if (job.hourly_rate_max) {
+    salaryHtml = `<strong style="color:var(--green)">€${job.hourly_rate_min||job.hourly_rate_max}–€${job.hourly_rate_max}/hr</strong>`;
+  } else if (job.salary_max) {
+    salaryHtml = `<strong style="color:var(--text-primary)">${job.salary_currency} ${(job.salary_min||0).toLocaleString()}–${job.salary_max.toLocaleString()}/yr</strong>`;
+  }
+
+  const tagsHtml = (job.tags_list || []).map(t => `<span class="tag-pill">${t}</span>`).join('');
+  const reasonsHtml = (job.match_reasons || []).map(r => `<li>${r}</li>`).join('');
+  const missingHtml = (job.missing_skills || []).map(s => `<li>${s}</li>`).join('');
+
+  document.getElementById('rjModalBody').innerHTML = `
+    <div class="jd-section">
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        <div class="match-badge ${score>=75?'match-high':score>=55?'match-mid':'match-low'}" style="width:52px;height:52px;font-size:15px;">
+          ${score}
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-muted)">Match Score</div>
+          <div style="font-size:12px;color:${scoreColor};font-weight:700;">${score >= 75 ? 'Strong Match' : score >= 55 ? 'Good Match' : 'Partial Match'}</div>
+          ${job.match_explanation ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;max-width:380px;">${job.match_explanation}</div>` : ''}
+        </div>
+        <div style="margin-left:auto;">${salaryHtml}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        <span class="badge badge-${job.remote_type||'remote'}">${job.remote_type||'remote'}</span>
+        <span class="badge badge-${job.job_type||'fulltime'}">${job.job_type||'fulltime'}</span>
+        ${job.is_europe_friendly ? '<span class="badge badge-europe">🇪🇺 Europe</span>' : ''}
+        ${job.travel_fund_score >= 70 ? '<span class="badge badge-travel">✈ Travel Fund</span>' : ''}
+        <span class="badge badge-source">${job.source}</span>
+      </div>
+      ${tagsHtml ? `<div class="job-card-tags">${tagsHtml}</div>` : ''}
+    </div>
+
+    ${reasonsHtml ? `
+    <div class="jd-section">
+      <div class="jd-section-title">Why it matches</div>
+      <ul class="match-reasons-list">${reasonsHtml}</ul>
+    </div>` : ''}
+
+    ${missingHtml ? `
+    <div class="jd-section">
+      <div class="jd-section-title">Skill gaps</div>
+      <ul class="match-reasons-list missing-list">${missingHtml}</ul>
+    </div>` : ''}
+
+    ${job.description ? `
+    <div class="jd-section">
+      <div class="jd-section-title">Description</div>
+      <div class="jd-desc">${job.description.replace(/<[^>]+>/g,'').slice(0,1200)}${job.description.length>1200?'…':''}</div>
+    </div>` : ''}
+
+    <div class="jd-section">
+      <div class="jd-section-title">Notes & Tracker</div>
+      <textarea id="jobNotes${job.id}" class="form-textarea" rows="2" style="font-size:12px;"
+                placeholder="Your notes…">${job.notes||''}</textarea>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+        <input type="date" id="followUp${job.id}" class="form-input" style="font-size:11px;"
+               value="${job.follow_up_date?job.follow_up_date.slice(0,10):''}" placeholder="Follow-up date">
+        <input type="text" id="contactPerson${job.id}" class="form-input" style="font-size:11px;"
+               value="${job.contact_person||''}" placeholder="Contact person">
+        <button class="btn btn-ghost btn-sm" onclick="saveTracker(${job.id})">Save Notes</button>
+      </div>
+    </div>
+
+    <div class="jd-section">
+      <div class="jd-section-title">AI Tools</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="runAIMatch(${job.id})">✦ AI Match Score</button>
+        ${job.source_url ? `<a href="${job.source_url}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">Apply →</a>` : ''}
+      </div>
+      <div class="jd-section-title" style="margin-top:10px;">Generate</div>
+      <div class="proposal-types">
+        <button class="proposal-type-btn" onclick="genProposal(${job.id},'cover_letter',this)">Cover Letter</button>
+        <button class="proposal-type-btn" onclick="genProposal(${job.id},'proposal',this)">Freelance Proposal</button>
+        <button class="proposal-type-btn" onclick="genProposal(${job.id},'outreach',this)">Recruiter Outreach</button>
+        <button class="proposal-type-btn" onclick="genProposal(${job.id},'comparison',this)">Role Comparison</button>
+      </div>
+      <div id="proposalResult${job.id}"></div>
+    </div>
+  `;
+}
+
+function closeRJModal() {
+  document.getElementById('remoteJobModal').style.display = 'none';
+}
+
+// Close modal on overlay click
+document.getElementById('remoteJobModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRJModal();
+});
+
+// ── AI Match ─────────────────────────────────────────────────────────────────
+function runAIMatch(jobId) {
+  showToast('Running AI match analysis…', 'info');
+  fetch(`/api/remote-jobs/${jobId}/match`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      showToast(`AI match score: ${data.match_score}/100`, 'success');
+      // Update badge in grid
+      const card = document.getElementById(`jcard-${jobId}`);
+      if (card) {
+        const badge = card.querySelector('.match-badge');
+        if (badge) {
+          badge.textContent = data.match_score;
+          badge.className = 'match-badge ' + (data.match_score>=75?'match-high':data.match_score>=55?'match-mid':'match-low');
+        }
+      }
+      // Re-open modal with updated data
+      openJobDetail(jobId);
+    })
+    .catch(err => showToast('Match failed: ' + err.message, 'error'));
+}
+
+// ── Proposal generation ───────────────────────────────────────────────────────
+function genProposal(jobId, type, btn) {
+  document.querySelectorAll('.proposal-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const resultDiv = document.getElementById('proposalResult' + jobId);
+  resultDiv.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-secondary);">Generating with AI…</div>';
+
+  fetch(`/api/remote-jobs/${jobId}/proposal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type })
+  })
+    .then(r => r.json())
+    .then(data => {
+      resultDiv.innerHTML = `
+        <div class="proposal-content">${data.content}</div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px;"
+                onclick="copyText(this, \`${data.content.replace(/`/g,"'")}\`)">⧉ Copy</button>
+      `;
+    })
+    .catch(err => {
+      resultDiv.innerHTML = `<div style="color:var(--red);padding:10px;">Error: ${err.message}</div>`;
+    });
+}
+
+// ── Save tracker notes ────────────────────────────────────────────────────────
+function saveTracker(jobId) {
+  const notes = (document.getElementById('jobNotes' + jobId) || {}).value;
+  const followUp = (document.getElementById('followUp' + jobId) || {}).value;
+  const contact = (document.getElementById('contactPerson' + jobId) || {}).value;
+
+  fetch(`/api/remote-jobs/${jobId}/tracker`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes, follow_up_date: followUp || null, contact_person: contact || null })
+  })
+    .then(r => r.json())
+    .then(() => showToast('Notes saved!', 'success'))
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Copy to clipboard ─────────────────────────────────────────────────────────
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = '⧉ Copy'; }, 2000);
+  });
+}
+
+// ── Toast (reuse existing or define fallback) ─────────────────────────────────
+if (typeof showToast === 'undefined') {
+  window.showToast = function(msg, type='info') {
+    const t = document.createElement('div');
+    const colors = { success: '#10b981', error: '#ef4444', info: '#6366f1' };
+    t.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 20px;
+      border-radius:10px;background:${colors[type]||colors.info};color:#fff;
+      font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.4);
+      animation:slideIn .3s ease;max-width:360px;`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(() => t.remove(), 300); }, 3500);
+  };
+}
+</script>
+{% endblock %}

@@ -307,6 +307,67 @@ CREATE TABLE IF NOT EXISTS weekly_briefings (
     sent_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
+
+-- ─── REMOTE JOB DISCOVERY MODULE ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS remote_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_url TEXT,
+    title TEXT NOT NULL,
+    company TEXT NOT NULL,
+    location TEXT,
+    country TEXT,
+    remote_type TEXT DEFAULT 'remote',
+    job_type TEXT DEFAULT 'fulltime',
+    salary_min INTEGER,
+    salary_max INTEGER,
+    salary_currency TEXT DEFAULT 'EUR',
+    hourly_rate_min INTEGER,
+    hourly_rate_max INTEGER,
+    description TEXT,
+    tags TEXT,
+    posted_at TEXT,
+    is_europe_friendly INTEGER DEFAULT 0,
+    is_saved INTEGER DEFAULT 0,
+    is_hidden INTEGER DEFAULT 0,
+    application_status TEXT DEFAULT 'new',
+    applied_at TEXT,
+    follow_up_date TEXT,
+    notes TEXT,
+    resume_used TEXT,
+    contact_person TEXT,
+    salary_discussed INTEGER,
+    quick_score INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source, external_id)
+);
+
+CREATE TABLE IF NOT EXISTS remote_job_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote_job_id INTEGER NOT NULL UNIQUE,
+    match_score INTEGER DEFAULT 0,
+    match_reasons TEXT,
+    missing_skills TEXT,
+    salary_assessment TEXT,
+    europe_score INTEGER DEFAULT 0,
+    travel_fund_score INTEGER DEFAULT 0,
+    estimated_monthly_eur INTEGER,
+    match_explanation TEXT,
+    matched_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
+
+CREATE TABLE IF NOT EXISTS remote_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote_job_id INTEGER NOT NULL,
+    proposal_type TEXT,
+    content TEXT,
+    generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
 """
 
 
@@ -362,6 +423,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # whatsapp_messages migrations
     if not _has_column(conn, "whatsapp_messages", "wa_intent"):
         conn.execute("ALTER TABLE whatsapp_messages ADD COLUMN wa_intent TEXT")
+    # remote_jobs migrations (new columns added over time)
+    if not _has_table(conn, "remote_jobs"):
+        return  # tables created fresh via SCHEMA above
+    if not _has_column(conn, "remote_jobs", "quick_score"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN quick_score INTEGER DEFAULT 0")
+    if not _has_column(conn, "remote_jobs", "follow_up_date"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN follow_up_date TEXT")
+    if not _has_column(conn, "remote_jobs", "salary_discussed"):
+        conn.execute("ALTER TABLE remote_jobs ADD COLUMN salary_discussed INTEGER")
 
 
 def _seed_defaults(conn: sqlite3.Connection) -> None:

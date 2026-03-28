@@ -55,6 +55,17 @@ from app.services.user_mgmt import (
     get_user, get_job_profile, get_travel_profile,
     update_job_profile, update_travel_profile,
 )
+from app.services.job_discovery import (
+    sync_all_sources as sync_remote_jobs,
+    list_remote_jobs, get_remote_job,
+    save_job as discovery_save_job,
+    hide_job as discovery_hide_job,
+    update_job_status as discovery_update_status,
+    update_job_tracker,
+    ai_match_job, generate_proposal,
+    get_travel_widget, get_discovery_stats,
+    get_proposals_for_job, list_applied_jobs,
+)
 from config import STATIC_DIR, TEMPLATES_DIR
 
 app = FastAPI(title="SecretaryAI — Executive Travel & Job Search Secretary")
@@ -98,8 +109,16 @@ def startup() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    # Remote job discovery: sync every hour
+    _scheduler.add_job(
+        sync_remote_jobs,
+        CronTrigger(minute=0),  # top of every hour
+        id="remote_job_sync_hourly",
+        replace_existing=True,
+        misfire_grace_time=1800,
+    )
     _scheduler.start()
-    print("[SecretaryAI] Scheduler: started — daily sync at 08:00 IST.", flush=True)
+    print("[SecretaryAI] Scheduler: started — daily sync at 08:00 IST, remote jobs every hour.", flush=True)
 
     # Run a sync immediately on startup if no recent sync exists
     threading.Thread(target=_run_startup_sync, daemon=True).start()
@@ -890,3 +909,219 @@ async def api_browser_apply(job_id: int):
         return await run_browser_apply(job_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+# ─── REMOTE JOB DISCOVERY MODULE ──────────────────────────────────────────────
+
+class RemoteJobTrackerUpdate(BaseModel):
+    notes: str | None = None
+    follow_up_date: str | None = None
+    resume_used: str | None = None
+    contact_person: str | None = None
+    salary_discussed: int | None = None
+
+
+@app.get("/remote-jobs", response_class=HTMLResponse)
+def remote_jobs_page(
+    request: Request,
+    source: str = "",
+    job_type: str = "",
+    remote_type: str = "",
+    europe_only: str = "",
+    min_score: int = 0,
+    status: str = "",
+    saved_only: str = "",
+    search: str = "",
+    sort_by: str = "relevance",
+    page: int = 1,
+):
+    filters = dict(
+        source=source or None,
+        job_type=job_type or None,
+        remote_type=remote_type or None,
+        europe_only=europe_only == "1",
+        min_score=min_score,
+        status=status or None,
+        saved_only=saved_only == "1",
+        search=search or None,
+        sort_by=sort_by,
+        page=page,
+        per_page=24,
+    )
+    try:
+        result = list_remote_jobs(**filters)
+        stats = get_discovery_stats()
+        travel_widget = get_travel_widget()
+        applied = list_applied_jobs(limit=30)
+    except Exception as exc:
+        result = {"jobs": [], "total": 0, "page": 1, "pages": 1}
+        stats = {"total": 0, "saved": 0, "applied": 0, "high_match": 0,
+                 "europe_friendly": 0, "last_sync": None}
+        travel_widget = []
+        applied = []
+
+    # sidebar context
+    pipeline_summary = None
+    try:
+        from app.services.pipeline import get_pipeline_summary
+        pipeline_summary = get_pipeline_summary()
+    except Exception:
+        pass
+    jobs_to_review = count_pending_review()
+    try:
+        from app.services.reminders import list_reminders
+        reminders_due = len([r for r in list_reminders() if r.get("status") == "pending"])
+    except Exception:
+        reminders_due = 0
+
+    return templates.TemplateResponse(
+        "remote_jobs.html",
+        {
+            "request": request,
+            "active_page": "remote_jobs",
+            "jobs": result["jobs"],
+            "pagination": {
+                "total": result["total"],
+                "page": result["page"],
+                "pages": result["pages"],
+                "per_page": result["per_page"],
+            },
+            "stats": stats,
+            "travel_widget": travel_widget,
+            "applied_jobs": applied,
+            "filters": {
+                "source": source,
+                "job_type": job_type,
+                "remote_type": remote_type,
+                "europe_only": europe_only,
+                "min_score": min_score,
+                "status": status,
+                "saved_only": saved_only,
+                "search": search,
+                "sort_by": sort_by,
+            },
+            "pipeline_summary": pipeline_summary,
+            "jobs_to_review": jobs_to_review,
+            "reminders_due": reminders_due,
+        },
+    )
+
+
+@app.get("/api/remote-jobs")
+def api_list_remote_jobs(
+    source: str = "",
+    job_type: str = "",
+    remote_type: str = "",
+    europe_only: str = "",
+    min_score: int = 0,
+    status: str = "",
+    saved_only: str = "",
+    search: str = "",
+    sort_by: str = "relevance",
+    page: int = 1,
+    per_page: int = 24,
+):
+    return list_remote_jobs(
+        page=page,
+        per_page=min(per_page, 100),
+        source=source or None,
+        job_type=job_type or None,
+        remote_type=remote_type or None,
+        europe_only=europe_only == "1",
+        min_score=min_score,
+        status=status or None,
+        saved_only=saved_only == "1",
+        search=search or None,
+        sort_by=sort_by,
+    )
+
+
+@app.get("/api/remote-jobs/stats")
+def api_remote_stats():
+    return get_discovery_stats()
+
+
+@app.get("/api/remote-jobs/travel-widget")
+def api_travel_widget():
+    return get_travel_widget()
+
+
+@app.get("/api/remote-jobs/tracker")
+def api_applied_tracker():
+    return list_applied_jobs()
+
+
+@app.post("/api/remote-jobs/sync")
+def api_sync_remote_jobs():
+    try:
+        result = sync_remote_jobs()
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/remote-jobs/{job_id}")
+def api_get_remote_job(job_id: int):
+    job = get_remote_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job["proposals"] = get_proposals_for_job(job_id)
+    return job
+
+
+@app.post("/api/remote-jobs/{job_id}/save")
+def api_save_remote_job(job_id: int):
+    try:
+        return discovery_save_job(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/api/remote-jobs/{job_id}/hide")
+def api_hide_remote_job(job_id: int):
+    try:
+        return discovery_hide_job(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/api/remote-jobs/{job_id}/status")
+def api_update_remote_status(job_id: int, payload: dict):
+    status = (payload.get("status") or "").strip()
+    try:
+        return discovery_update_status(job_id, status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/remote-jobs/{job_id}/tracker")
+def api_update_tracker(job_id: int, payload: RemoteJobTrackerUpdate):
+    return update_job_tracker(
+        job_id,
+        notes=payload.notes,
+        follow_up_date=payload.follow_up_date,
+        resume_used=payload.resume_used,
+        contact_person=payload.contact_person,
+        salary_discussed=payload.salary_discussed,
+    )
+
+
+@app.post("/api/remote-jobs/{job_id}/match")
+def api_ai_match(job_id: int):
+    try:
+        return ai_match_job(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/remote-jobs/{job_id}/proposal")
+def api_generate_proposal(job_id: int, payload: dict):
+    proposal_type = payload.get("type", "cover_letter")
+    try:
+        return generate_proposal(job_id, proposal_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
