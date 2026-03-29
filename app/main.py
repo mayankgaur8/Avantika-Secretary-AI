@@ -1652,39 +1652,63 @@ class PackageStatusPayload(BaseModel):
 
 @app.get("/resume-profile", response_class=HTMLResponse)
 def page_resume_profile(request: Request):
-    user = get_user()
-    profile = rs_get_profile()
-    return templates.TemplateResponse(
-        "resume_profile.html",
-        {
-            "request": request,
-            "user": user,
-            "active_page": "resume_profile",
-            "profile": profile,
-            "has_profile": rs_has_profile(),
-        },
-    )
+    ctx = _base_ctx(request)
+    try:
+        profile = rs_get_profile()
+        has_profile = rs_has_profile()
+    except Exception as exc:
+        logger.error("Resume profile page error: %s", exc, exc_info=True)
+        profile = {
+            "full_name": "",
+            "headline": "",
+            "email": "",
+            "phone": "",
+            "location": "",
+            "linkedin_url": "",
+            "github_url": "",
+            "portfolio_url": "",
+            "years_experience": 0,
+            "salary_min": 0,
+            "salary_max": 0,
+            "summary": "",
+            "skills": [],
+            "work_history": [],
+            "achievements": [],
+        }
+        has_profile = False
+    ctx.update({
+        "active_page": "resume_profile",
+        "profile": profile,
+        "has_profile": has_profile,
+    })
+    return templates.TemplateResponse(request, "resume_profile.html", ctx)
 
 
 @app.get("/apply-packages", response_class=HTMLResponse)
 def page_apply_packages(request: Request, page: int = 1):
-    user = get_user()
-    data = rs_list_apply_packages(page=page, per_page=20)
-    return templates.TemplateResponse(
-        "apply_packages.html",
-        {
-            "request": request,
-            "user": user,
-            "active_page": "apply_packages",
-            "packages": data["packages"],
-            "pagination": {
-                "total": data["total"],
-                "page": data["page"],
-                "pages": data["pages"],
-            },
-            "stats": data["stats"],
+    ctx = _base_ctx(request)
+    try:
+        data = rs_list_apply_packages(page=page, per_page=20)
+    except Exception as exc:
+        logger.error("Apply packages page error: %s", exc, exc_info=True)
+        data = {
+            "packages": [],
+            "total": 0,
+            "page": 1,
+            "pages": 1,
+            "stats": {},
+        }
+    ctx.update({
+        "active_page": "apply_packages",
+        "packages": data["packages"],
+        "pagination": {
+            "total": data["total"],
+            "page": data["page"],
+            "pages": data["pages"],
         },
-    )
+        "stats": data["stats"],
+    })
+    return templates.TemplateResponse(request, "apply_packages.html", ctx)
 
 
 # ── Resume Profile API ──
