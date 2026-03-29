@@ -280,6 +280,19 @@ def _fetch_remotive(client: httpx.Client) -> dict[str, Any]:
         logger.error("Fetch failed", exc_info=True)
         return _empty_fetch_result("remotive", url, str(exc))
 
+    # Log first raw job so we can verify field names in production
+    if jobs:
+        first_raw = jobs[0]
+        logger.info(
+            "Remotive first raw job keys: %s", sorted(first_raw.keys())
+        )
+        logger.info(
+            "Remotive first raw job sample: id=%s title=%r company_name=%r url=%r job_type=%r",
+            first_raw.get("id"), first_raw.get("title"),
+            first_raw.get("company_name"), first_raw.get("url"),
+            first_raw.get("job_type"),
+        )
+
     results = []
     for j in jobs:
         salary_text = j.get("salary") or ""
@@ -311,7 +324,15 @@ def _fetch_remotive(client: httpx.Client) -> dict[str, Any]:
             "tags": tags,
             "posted_at": j.get("publication_date"),
         })
-    logger.info("Jobs parsed: %d", len(results))
+
+    logger.info("Remotive normalized jobs count: %d", len(results))
+    if results:
+        fn = results[0]
+        logger.info(
+            "Remotive first normalized job: external_id=%r title=%r company=%r source_url=%r job_type=%r",
+            fn.get("external_id"), fn.get("title"),
+            fn.get("company"), fn.get("source_url"), fn.get("job_type"),
+        )
     return {
         "source": "remotive",
         "url": str(resp.request.url),
@@ -557,58 +578,74 @@ def _upsert_job(job: dict) -> tuple[bool, int]:
     """Insert or update a remote job. Returns (is_new, job_id)."""
     quick = _quick_score(job)
     europe = 1 if _is_europe_friendly(job) else 0
-    with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT id FROM remote_jobs WHERE source=? AND external_id=?",
-            (job["source"], job["external_id"]),
-        ).fetchone()
-        if existing:
+    try:
+        with get_conn() as conn:
+            existing = conn.execute(
+                "SELECT id FROM remote_jobs WHERE source=? AND external_id=?",
+                (job["source"], job["external_id"]),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    """UPDATE remote_jobs SET
+                        title=?, company=?, location=?, country=?, remote_type=?,
+                        job_type=?, salary_min=COALESCE(salary_min,?),
+                        salary_max=COALESCE(salary_max,?),
+                        salary_currency=COALESCE(salary_currency,?),
+                        hourly_rate_min=COALESCE(hourly_rate_min,?),
+                        hourly_rate_max=COALESCE(hourly_rate_max,?),
+                        description=?, tags=?, posted_at=?,
+                        is_europe_friendly=?, quick_score=?,
+                        updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?""",
+                    (
+                        job["title"], job["company"], job.get("location"),
+                        job.get("country"), job.get("remote_type", "remote"),
+                        job.get("job_type", "fulltime"),
+                        job.get("salary_min"), job.get("salary_max"),
+                        job.get("salary_currency", "EUR"),
+                        job.get("hourly_rate_min"), job.get("hourly_rate_max"),
+                        job.get("description"), job.get("tags"),
+                        job.get("posted_at"), europe, quick,
+                        existing["id"],
+                    ),
+                )
+                logger.debug(
+                    "_upsert_job UPDATE: source=%s external_id=%s db_id=%s",
+                    job["source"], job["external_id"], existing["id"],
+                )
+                return False, existing["id"]
             conn.execute(
-                """UPDATE remote_jobs SET
-                    title=?, company=?, location=?, country=?, remote_type=?,
-                    job_type=?, salary_min=COALESCE(salary_min,?),
-                    salary_max=COALESCE(salary_max,?),
-                    salary_currency=COALESCE(salary_currency,?),
-                    hourly_rate_min=COALESCE(hourly_rate_min,?),
-                    hourly_rate_max=COALESCE(hourly_rate_max,?),
-                    description=?, tags=?, posted_at=?,
-                    is_europe_friendly=?, quick_score=?,
-                    updated_at=CURRENT_TIMESTAMP
-                WHERE id=?""",
+                """INSERT INTO remote_jobs (
+                    external_id, source, source_url, title, company, location, country,
+                    remote_type, job_type, salary_min, salary_max, salary_currency,
+                    hourly_rate_min, hourly_rate_max, description, tags, posted_at,
+                    is_europe_friendly, quick_score
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
+                    job["external_id"], job["source"], job.get("source_url"),
                     job["title"], job["company"], job.get("location"),
                     job.get("country"), job.get("remote_type", "remote"),
                     job.get("job_type", "fulltime"),
                     job.get("salary_min"), job.get("salary_max"),
                     job.get("salary_currency", "EUR"),
                     job.get("hourly_rate_min"), job.get("hourly_rate_max"),
-                    job.get("description"), job.get("tags"),
-                    job.get("posted_at"), europe, quick,
-                    existing["id"],
+                    job.get("description"), job.get("tags"), job.get("posted_at"),
+                    europe, quick,
                 ),
             )
-            return False, existing["id"]
-        conn.execute(
-            """INSERT INTO remote_jobs (
-                external_id, source, source_url, title, company, location, country,
-                remote_type, job_type, salary_min, salary_max, salary_currency,
-                hourly_rate_min, hourly_rate_max, description, tags, posted_at,
-                is_europe_friendly, quick_score
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                job["external_id"], job["source"], job.get("source_url"),
-                job["title"], job["company"], job.get("location"),
-                job.get("country"), job.get("remote_type", "remote"),
-                job.get("job_type", "fulltime"),
-                job.get("salary_min"), job.get("salary_max"),
-                job.get("salary_currency", "EUR"),
-                job.get("hourly_rate_min"), job.get("hourly_rate_max"),
-                job.get("description"), job.get("tags"), job.get("posted_at"),
-                europe, quick,
-            ),
+            new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            logger.debug(
+                "_upsert_job INSERT: source=%s external_id=%s new_db_id=%s title=%r",
+                job["source"], job["external_id"], new_id, job.get("title"),
+            )
+            return True, new_id
+    except Exception as exc:
+        logger.error(
+            "_upsert_job FAILED: source=%s external_id=%s title=%r error=%s",
+            job.get("source"), job.get("external_id"), job.get("title"), exc,
+            exc_info=True,
         )
-        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return True, new_id
+        raise
 
 
 # ─── Main sync entry point ────────────────────────────────────────────────────
@@ -631,50 +668,102 @@ def sync_all_sources() -> dict:
         for source_name, fetcher in sources:
             try:
                 fetch_result = fetcher(client)
-                jobs = fetch_result.get("jobs", [])
-                src_new = src_updated = src_skipped = 0
-                for job in jobs:
-                    if not job.get("title") or not job.get("external_id"):
-                        src_skipped += 1
-                        continue
+            except Exception as exc:
+                logger.error("Source [%s] fetch failed: %s", source_name, exc, exc_info=True)
+                source_stats.append({"source": source_name, "error": str(exc),
+                                     "fetched": 0, "parsed_jobs": 0,
+                                     "inserted": 0, "updated": 0, "skipped": 0,
+                                     "job_errors": 0})
+                total_errors += 1
+                continue
+
+            jobs = fetch_result.get("jobs") or []
+            logger.info(
+                "Source [%s]: fetch OK — fetched=%d parsed=%d http_status=%s fetch_error=%s",
+                source_name,
+                fetch_result.get("fetched_count", 0),
+                fetch_result.get("parsed_count", len(jobs)),
+                fetch_result.get("status_code"),
+                fetch_result.get("error"),
+            )
+
+            src_new = src_updated = 0
+            skip_no_title = skip_no_ext_id = skip_no_url = 0
+            src_job_errors = 0
+
+            for job in jobs:
+                # Granular skip tracking
+                if not job.get("title"):
+                    skip_no_title += 1
+                    logger.debug("Source [%s] skip: missing title — %r", source_name, job)
+                    continue
+                if not job.get("external_id"):
+                    skip_no_ext_id += 1
+                    logger.debug("Source [%s] skip: missing external_id — title=%r", source_name, job.get("title"))
+                    continue
+                if not job.get("source_url"):
+                    skip_no_url += 1
+                    logger.debug("Source [%s] skip: missing source_url (apply_url) — title=%r", source_name, job.get("title"))
+                    # Do NOT skip — URL is nice-to-have, not required for insert
+                    # fall through to upsert
+
+                try:
                     is_new, _ = _upsert_job(job)
                     if is_new:
                         src_new += 1
                     else:
                         src_updated += 1
-                source_stats.append({
-                    "source": source_name,
-                    "url": fetch_result.get("url"),
-                    "status_code": fetch_result.get("status_code"),
-                    "response_length": fetch_result.get("response_length", 0),
-                    "json_keys": fetch_result.get("json_keys", []),
-                    "fetched": fetch_result.get("fetched_count", 0),
-                    "parsed_jobs": fetch_result.get("parsed_count", len(jobs)),
-                    "inserted": src_new,
-                    "updated": src_updated,
-                    "skipped": src_skipped,
-                    "error": fetch_result.get("error"),
-                })
-                if fetch_result.get("error"):
-                    total_errors += 1
-                total_new += src_new
-                total_updated += src_updated
-                total_skipped += src_skipped
-                logger.info(
-                    "Source [%s]: fetched=%d parsed=%d inserted=%d updated=%d skipped=%d error=%s",
-                    source_name,
-                    fetch_result.get("fetched_count", 0),
-                    fetch_result.get("parsed_count", len(jobs)),
-                    src_new,
-                    src_updated,
-                    src_skipped,
-                    fetch_result.get("error"),
-                )
-            except Exception as exc:
-                logger.error("Source [%s] sync error: %s", source_name, exc, exc_info=True)
-                source_stats.append({"source": source_name, "error": str(exc),
-                                     "fetched": 0, "inserted": 0, "updated": 0, "skipped": 0})
+                except Exception as exc:
+                    src_job_errors += 1
+                    # _upsert_job already logged with exc_info — just count here
+                    logger.warning(
+                        "Source [%s] job upsert failed (job %d/%d skipped): %s",
+                        source_name, src_new + src_updated + src_job_errors, len(jobs), exc,
+                    )
+                    continue
+
+            src_skipped = skip_no_title + skip_no_ext_id
+            logger.info(
+                "Source [%s]: inserted=%d updated=%d skipped_no_title=%d "
+                "skipped_no_id=%d warned_no_url=%d job_errors=%d",
+                source_name, src_new, src_updated,
+                skip_no_title, skip_no_ext_id, skip_no_url, src_job_errors,
+            )
+
+            source_stats.append({
+                "source": source_name,
+                "url": fetch_result.get("url"),
+                "status_code": fetch_result.get("status_code"),
+                "response_length": fetch_result.get("response_length", 0),
+                "fetched": fetch_result.get("fetched_count", 0),
+                "parsed_jobs": fetch_result.get("parsed_count", len(jobs)),
+                "inserted": src_new,
+                "updated": src_updated,
+                "skipped": src_skipped,
+                "warned_no_url": skip_no_url,
+                "job_errors": src_job_errors,
+                "error": fetch_result.get("error"),
+            })
+            if fetch_result.get("error") or src_job_errors:
                 total_errors += 1
+            total_new += src_new
+            total_updated += src_updated
+            total_skipped += src_skipped
+
+    # Verify DB state after all inserts
+    try:
+        with get_conn() as conn:
+            db_total = conn.execute("SELECT COUNT(*) FROM remote_jobs WHERE is_hidden=0").fetchone()[0]
+            db_new_today = conn.execute(
+                "SELECT COUNT(*) FROM remote_jobs WHERE date(created_at)=date('now')"
+            ).fetchone()[0]
+        logger.info(
+            "DB state after sync: total_visible=%d inserted_today=%d",
+            db_total, db_new_today,
+        )
+    except Exception as exc:
+        logger.error("DB count check after sync failed: %s", exc, exc_info=True)
+        db_total = -1
 
     result = {
         "total_new": total_new,       # alias kept for backwards compat
@@ -682,13 +771,14 @@ def sync_all_sources() -> dict:
         "updated": total_updated,
         "duplicates_skipped": total_skipped,
         "errors": total_errors,
+        "db_total_visible": db_total,
         "sources": source_stats,
         "synced_at": datetime.utcnow().isoformat(),
     }
     _log_discovery_run("remote_job_sync", "success", json.dumps(result))
     logger.info(
-        "Remote job sync complete: inserted=%d updated=%d skipped=%d errors=%d",
-        total_new, total_updated, total_skipped, total_errors,
+        "Remote job sync complete: inserted=%d updated=%d skipped=%d errors=%d db_total=%d",
+        total_new, total_updated, total_skipped, total_errors, db_total,
     )
     return result
 
