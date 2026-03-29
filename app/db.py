@@ -451,6 +451,94 @@ CREATE TABLE IF NOT EXISTS outreach_templates (
     is_builtin INTEGER DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ─── RESUME-AWARE APPLICATION ENGINE ──────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS resume_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER DEFAULT 1,
+    full_name TEXT,
+    headline TEXT,
+    email TEXT,
+    phone TEXT,
+    location TEXT,
+    linkedin_url TEXT,
+    github_url TEXT,
+    portfolio_url TEXT,
+    years_experience INTEGER DEFAULT 0,
+    target_roles TEXT,
+    target_locations TEXT,
+    visa_status TEXT,
+    relocation_ready INTEGER DEFAULT 1,
+    salary_min INTEGER,
+    salary_max INTEGER,
+    salary_currency TEXT DEFAULT 'EUR',
+    summary TEXT,
+    skills TEXT,
+    certifications TEXT,
+    education TEXT,
+    work_history TEXT,
+    projects TEXT,
+    achievements TEXT,
+    languages TEXT,
+    raw_text TEXT,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS resume_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote_job_id INTEGER,
+    profile_id INTEGER DEFAULT 1,
+    version_name TEXT,
+    tailored_summary TEXT,
+    tailored_skills TEXT,
+    tailored_bullets TEXT,
+    ats_keywords TEXT,
+    ats_score INTEGER DEFAULT 0,
+    missing_keywords TEXT,
+    generation_notes TEXT,
+    resume_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
+
+CREATE TABLE IF NOT EXISTS apply_packages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote_job_id INTEGER NOT NULL UNIQUE,
+    profile_id INTEGER DEFAULT 1,
+    cover_letter TEXT,
+    email_subject TEXT,
+    recruiter_email TEXT,
+    linkedin_message TEXT,
+    screening_answers TEXT,
+    ats_analysis TEXT,
+    tailored_resume_json TEXT,
+    resume_version_id INTEGER,
+    status TEXT DEFAULT 'draft',
+    generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    applied_at TEXT,
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
+
+CREATE TABLE IF NOT EXISTS resume_job_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote_job_id INTEGER NOT NULL UNIQUE,
+    profile_id INTEGER DEFAULT 1,
+    skills_overlap INTEGER DEFAULT 0,
+    title_relevance INTEGER DEFAULT 0,
+    domain_score INTEGER DEFAULT 0,
+    seniority_fit INTEGER DEFAULT 0,
+    relocation_fit INTEGER DEFAULT 0,
+    composite_score INTEGER DEFAULT 0,
+    matched_skills TEXT,
+    missing_skills TEXT,
+    ats_keywords TEXT,
+    recommendation TEXT,
+    analysis TEXT,
+    matched_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(remote_job_id) REFERENCES remote_jobs(id)
+);
 """
 
 
@@ -529,6 +617,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Client Acquisition seeding (always runs regardless of remote_jobs state)
     if _has_table(conn, "outreach_companies"):
         _seed_outreach_templates(conn)
+    # Resume Profile seeding — pre-populate from known resume data
+    if _has_table(conn, "resume_profiles"):
+        _seed_resume_profile(conn)
 
 
 def _seed_outreach_templates(conn: sqlite3.Connection) -> None:
@@ -590,6 +681,195 @@ def _seed_outreach_templates(conn: sqlite3.Connection) -> None:
                VALUES (?,?,?,?,1)""",
             (name, ttype, subject, content),
         )
+
+
+def _seed_resume_profile(conn: sqlite3.Connection) -> None:
+    """Pre-populate resume_profiles with Mayank's known resume data (runs once)."""
+    import json as _json
+    if conn.execute("SELECT COUNT(*) FROM resume_profiles WHERE user_id=1").fetchone()[0] > 0:
+        return
+
+    skills = _json.dumps([
+        "Java 17", "Java 11", "Java 8", "Spring Boot", "Spring Framework",
+        "Spring Security", "Microservices", "REST APIs", "GraphQL",
+        "Hibernate ORM", "JPA", "Apache Kafka", "JMS", "Event-Driven Architecture",
+        "React", "Angular", "AWS Lambda", "AWS EC2", "AWS RDS", "AWS SQS",
+        "AWS API Gateway", "Azure", "Docker", "Kubernetes", "Jenkins",
+        "CI/CD Pipelines", "Git", "GitHub", "Maven", "SonarQube",
+        "OAuth2", "JWT", "JUnit", "Mockito", "TDD", "Postman", "Swagger",
+        "SQL", "PostgreSQL", "MySQL", "Redis", "Multithreading", "Java Concurrency",
+        "JVM Monitoring", "GC Optimization", "Design Patterns", "Agile", "Scrum",
+        "JIRA", "System Design", "Linux",
+    ])
+    certifications = _json.dumps([
+        "AWS Certified Solutions Architect — Associate Level",
+        "Spring Boot Professional Training Certification",
+        "Team & Project Management Certification (Projektmanagement)",
+    ])
+    education = _json.dumps([
+        {
+            "degree": "Master of Computer Applications (MCA)",
+            "field": "Applications and Software Development",
+            "institution": "IGNOU, New Delhi",
+            "year_start": 2002,
+            "year_end": 2005,
+        },
+        {
+            "degree": "Post Graduate Diploma in Computer Application",
+            "field": "Computer Application",
+            "institution": "IGNOU, New Delhi",
+            "year_start": 2001,
+            "year_end": 2002,
+        },
+        {
+            "degree": "Bachelor of Commerce (B.COM)",
+            "field": "Accounting and Finance",
+            "institution": "Allahabad University",
+            "year_start": 1998,
+            "year_end": 2000,
+        },
+    ])
+    work_history = _json.dumps([
+        {
+            "title": "Project Lead",
+            "company": "Wipro Technologies",
+            "location": "Bengaluru, India",
+            "start": "Feb 2021",
+            "end": "Present",
+            "bullets": [
+                "Designed and deployed a Java-based performance monitoring tool delivering 40% improvement in system efficiency and 20% increase in client satisfaction across 500+ client touchpoints.",
+                "Led cross-functional delivery teams ensuring 100% on-time project completion across all active engagements.",
+                "Built a standardized documentation framework covering 15 concurrent projects, cutting onboarding time by 30% and reducing data retrieval time by 25%.",
+                "Established KPIs and reporting structures for 500+ client feedback loops, improving accountability by 25%.",
+                "Technologies: Java 17, Spring Boot, Microservices, REST API, AWS, Docker, Kubernetes, Kafka, Agile/Scrum, JIRA, SonarQube",
+            ],
+        },
+        {
+            "title": "Java Consultant",
+            "company": "Virtusa Consulting Services",
+            "location": "Bengaluru, India",
+            "start": "Aug 2018",
+            "end": "Aug 2020",
+            "bullets": [
+                "Rewrote legacy codebase achieving 40% reduction in application load times and 25% increase in user retention.",
+                "Designed multi-threaded Java architecture supporting 200+ simultaneous transactions with 50% throughput increase.",
+                "Led architectural design of distributed Java systems focusing on scalability, resilience, and cloud-native patterns.",
+                "Technologies: Java 11, Spring Boot, Multithreading, JVM Monitoring, GC Optimization, Hibernate ORM, REST API, CI/CD",
+            ],
+        },
+        {
+            "title": "Senior Software Developer",
+            "company": "TEKsystems",
+            "location": "Bengaluru, India",
+            "start": "Sep 2017",
+            "end": "Aug 2018",
+            "bullets": [
+                "Mentored 6 junior developers in Java best practices, design patterns, and TDD.",
+                "Performed systematic code refactoring delivering 25% improvement in API response times.",
+                "Technologies: Java 8, Spring Framework, RESTful APIs, Design Patterns, TDD, Git, Maven",
+            ],
+        },
+        {
+            "title": "Java Consultant",
+            "company": "Pyramid Consulting",
+            "location": "Bengaluru, India",
+            "start": "Sep 2016",
+            "end": "Feb 2017",
+            "bullets": [
+                "Designed microservices architecture increasing platform user load capacity by 2x.",
+                "Implemented CI/CD pipelines using Jenkins, significantly reducing time-to-market.",
+                "Technologies: Java 8, Microservices, Spring Boot, CI/CD, Jenkins, Docker, Multithreading",
+            ],
+        },
+        {
+            "title": "Senior Software Developer",
+            "company": "Object Technology Solutions",
+            "location": "Bengaluru, India",
+            "start": "Feb 2016",
+            "end": "Aug 2016",
+            "bullets": [
+                "Identified and resolved critical performance bottlenecks across core Java applications.",
+                "Technologies: Core Java, J2EE, Spring, SQL, Performance Tuning",
+            ],
+        },
+        {
+            "title": "Java Consultant",
+            "company": "Blue Star Infotech",
+            "location": "Bengaluru, India",
+            "start": "Feb 2015",
+            "end": "Nov 2015",
+            "bullets": [
+                "Conducted code audit resulting in 15% increase in transaction handling capacity.",
+                "Implemented multi-threaded solutions and evaluated third-party library integrations.",
+            ],
+        },
+        {
+            "title": "Technical Lead",
+            "company": "Wipro Technologies",
+            "location": "Bengaluru, India",
+            "start": "Jan 2010",
+            "end": "May 2014",
+            "bullets": [
+                "Led 1-on-1 mentoring of junior developers and coordinated cross-department delivery.",
+                "Implemented CI/CD pipelines enabling faster release cycles.",
+                "Established performance monitoring systems minimizing production downtime.",
+            ],
+        },
+    ])
+    achievements = _json.dumps([
+        "Engineered a Java performance optimization tool at Wipro delivering 40% system efficiency increase and 20% improvement in client satisfaction across 500+ touchpoints.",
+        "Architected a multi-threaded Java system at Virtusa handling 200+ simultaneous transactions — 50% throughput increase and 40% load time reduction.",
+        "Designed microservices architecture at Pyramid Consulting that doubled user load capacity (2x) and accelerated time-to-market via CI/CD.",
+        "Created standardized documentation framework used across 15 projects, reducing onboarding time by 30% and search time by 25%.",
+        "Established KPIs and accountability frameworks for cross-functional teams resulting in 25% increase in team accountability and sustained on-time delivery.",
+    ])
+    target_roles = _json.dumps(["Senior Java Engineer", "Technical Lead", "Software Architect", "Java Contractor", "Spring Boot Consultant"])
+    target_locations = _json.dumps(["Germany", "Berlin", "Munich", "Frankfurt", "Hamburg", "Stuttgart", "Düsseldorf", "Netherlands", "Amsterdam", "Remote"])
+    languages = _json.dumps([
+        {"language": "English", "level": "C1 — Advanced (business fluent, interview-ready)"},
+        {"language": "German", "level": "A1 — Beginner (actively learning)"},
+    ])
+    summary = (
+        "Results-driven Senior Java Engineer and Technical Lead with 17+ years designing and delivering "
+        "cloud-native, microservices-based enterprise applications. Proven track record leading cross-functional "
+        "teams of 10+ developers, driving 40% performance gains, and delivering 100% on-time project completion "
+        "across global clients. Deep expertise in Spring Boot, event-driven architecture (Apache Kafka), REST APIs, "
+        "AWS, Docker, and Kubernetes. Available for immediate remote contract or relocation to Germany/Europe. "
+        "Seeking Senior Java Lead or Software Architect roles at €90,000–€100,000."
+    )
+    conn.execute(
+        """INSERT INTO resume_profiles
+           (user_id, full_name, headline, email, phone, location, linkedin_url,
+            years_experience, target_roles, target_locations, visa_status,
+            relocation_ready, salary_min, salary_max, salary_currency,
+            summary, skills, certifications, education, work_history,
+            achievements, languages)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            1,
+            "Mayank Gaur",
+            "Senior Java Engineer & Technical Lead | 17+ Years | Spring Boot · Microservices · AWS · React",
+            "mayankgaur.8@gmail.com",
+            "+91 9620439138",
+            "Bengaluru, India",
+            "https://linkedin.com/in/mayank-gaur8/",
+            17,
+            target_roles,
+            target_locations,
+            "chancenkarte_applied",
+            1,
+            90000,
+            100000,
+            "EUR",
+            summary,
+            skills,
+            certifications,
+            education,
+            work_history,
+            achievements,
+            languages,
+        ),
+    )
 
 
 def _seed_defaults(conn: sqlite3.Connection) -> None:

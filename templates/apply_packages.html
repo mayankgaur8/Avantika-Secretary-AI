@@ -1,0 +1,783 @@
+{% extends "base.html" %}
+
+{% block title %}Apply Packages — Avantika SecretaryAI{% endblock %}
+
+{% block head %}
+<style>
+  /* ── Stats Bar ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 768px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-card .stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .stat-card .stat-value {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+  }
+  .stat-card.ready   .stat-value { color: #22c55e; }
+  .stat-card.applied .stat-value { color: #3b82f6; }
+  .stat-card.draft   .stat-value { color: var(--text-muted); }
+
+  /* ── Toolbar ── */
+  .packages-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-btn {
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .filter-btn:hover, .filter-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* ── Package Cards ── */
+  .packages-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .pkg-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color .15s;
+  }
+  .pkg-card:hover { border-color: var(--accent); }
+
+  .pkg-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .pkg-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+  }
+  .pkg-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pkg-company {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .pkg-tags {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .tag-ready   { background: rgba(34,197,94,.15);  color: #22c55e; }
+  .tag-applied { background: rgba(59,130,246,.15); color: #3b82f6; }
+  .tag-draft   { background: rgba(148,163,184,.12); color: #94a3b8; }
+  .tag-score-high   { background: rgba(34,197,94,.12);  color: #16a34a; }
+  .tag-score-mid    { background: rgba(234,179,8,.12);  color: #ca8a04; }
+  .tag-score-low    { background: rgba(239,68,68,.12);  color: #dc2626; }
+
+  .pkg-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .pkg-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* ── ATS Bar ── */
+  .ats-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 20px 12px;
+  }
+  .ats-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    min-width: 68px;
+  }
+  .ats-bar-bg {
+    flex: 1;
+    height: 5px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .ats-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width .3s ease;
+  }
+  .ats-score-num {
+    font-size: 12px;
+    font-weight: 700;
+    min-width: 30px;
+    text-align: right;
+  }
+
+  /* ── Copy Buttons Strip ── */
+  .pkg-copy-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px 14px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+    background: rgba(0,0,0,.015);
+  }
+  .copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .copy-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .copy-btn.copied {
+    background: rgba(34,197,94,.1);
+    border-color: #22c55e;
+    color: #22c55e;
+  }
+  .copy-btn-icon { font-size: 13px; }
+
+  .pkg-more-btn {
+    margin-left: auto;
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .pkg-more-btn:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* ── Empty State ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+  .empty-sub { font-size: 14px; margin-bottom: 20px; }
+
+  /* ── Pagination ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+  }
+  .page-btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all .15s;
+  }
+  .page-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .page-btn.current { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .page-btn.disabled { opacity: .4; pointer-events: none; }
+
+  /* ── Detail Modal ── */
+  .pkg-detail-modal .modal { max-width: 780px; width: 95vw; max-height: 88vh; overflow-y: auto; }
+  .detail-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin: 0 -24px 16px;
+    padding: 0 24px;
+    overflow-x: auto;
+  }
+  .detail-tab {
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: all .15s;
+  }
+  .detail-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .detail-pane { display: none; }
+  .detail-pane.active { display: block; }
+  .detail-content-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .screening-item {
+    margin-bottom: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .screening-q { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
+  .screening-a { font-size: 13px; color: var(--text-primary); }
+  .ats-detail-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .ats-detail-row:last-child { border-bottom: none; }
+  .kw-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .kw-chip {
+    font-size: 11px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .kw-matched { background: rgba(34,197,94,.12); color: #16a34a; }
+  .kw-missing  { background: rgba(239,68,68,.1); color: #dc2626; }
+  .copy-all-btn {
+    margin-left: auto;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all .15s;
+  }
+  .copy-all-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .tab-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .tab-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+
+  .status-actions {
+    display: flex;
+    gap: 8px;
+    padding: 14px 0 0;
+    border-top: 1px solid var(--border);
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+</style>
+{% endblock %}
+
+{% block page_title %}Apply Packages{% endblock %}
+{% block page_subtitle %}AI-generated cover letters, emails &amp; ATS analysis{% endblock %}
+
+{% block topbar_actions %}
+<a href="/remote-jobs" class="btn btn-ghost btn-sm">◎ Remote Jobs</a>
+<a href="/resume-profile" class="btn btn-primary btn-sm">✦ Resume Profile</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats Bar -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total Packages</div>
+    <div class="stat-value">{{ stats.total or 0 }}</div>
+  </div>
+  <div class="stat-card ready">
+    <div class="stat-label">Ready to Apply</div>
+    <div class="stat-value">{{ stats.ready or 0 }}</div>
+  </div>
+  <div class="stat-card applied">
+    <div class="stat-label">Applied</div>
+    <div class="stat-value">{{ stats.applied or 0 }}</div>
+  </div>
+  <div class="stat-card draft">
+    <div class="stat-label">Draft</div>
+    <div class="stat-value">{{ stats.draft or 0 }}</div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="packages-toolbar">
+  <div class="toolbar-left">
+    <button class="filter-btn active" onclick="filterPackages('all', this)">All</button>
+    <button class="filter-btn" onclick="filterPackages('ready', this)">Ready</button>
+    <button class="filter-btn" onclick="filterPackages('applied', this)">Applied</button>
+    <button class="filter-btn" onclick="filterPackages('draft', this)">Draft</button>
+  </div>
+  <a href="/remote-jobs" class="btn btn-ghost btn-sm" style="font-size:12px;">
+    + Generate from Job List
+  </a>
+</div>
+
+<!-- Package List -->
+{% if packages %}
+<div class="packages-list" id="packagesList">
+  {% for pkg in packages %}
+  {% set ats_score = pkg.ats_score or 0 %}
+  {% set score_cls = 'tag-score-high' if ats_score >= 70 else ('tag-score-mid' if ats_score >= 50 else 'tag-score-low') %}
+  {% set bar_color = '#22c55e' if ats_score >= 70 else ('#f59e0b' if ats_score >= 50 else '#ef4444') %}
+  <div class="pkg-card" data-status="{{ pkg.status }}">
+    <div class="pkg-header">
+      <div class="pkg-meta">
+        <div class="pkg-title">{{ pkg.title or 'Untitled Role' }}</div>
+        <div class="pkg-company">{{ pkg.company or '—' }}{% if pkg.location %} · {{ pkg.location }}{% endif %}</div>
+        <div class="pkg-tags">
+          <span class="tag tag-{{ pkg.status }}">{{ pkg.status | upper }}</span>
+          {% if ats_score > 0 %}
+          <span class="tag {{ score_cls }}">ATS {{ ats_score }}%</span>
+          {% endif %}
+          {% if pkg.salary_min and pkg.salary_min > 0 %}
+          <span class="tag" style="background:rgba(139,92,246,.1);color:#8b5cf6;">
+            €{{ '{:,.0f}'.format(pkg.salary_min) }}{% if pkg.salary_max %} – €{{ '{:,.0f}'.format(pkg.salary_max) }}{% endif %}
+          </span>
+          {% endif %}
+          {% if pkg.source_url %}
+          <a href="{{ pkg.source_url }}" target="_blank" class="tag" style="background:rgba(100,116,139,.08);color:#64748b;text-decoration:none;">↗ Job Link</a>
+          {% endif %}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+        <div class="pkg-date">
+          {% if pkg.applied_at %}Applied {{ pkg.applied_at[:10] }}
+          {% elif pkg.generated_at %}Generated {{ pkg.generated_at[:10] }}
+          {% else %}—{% endif %}
+        </div>
+        <div class="pkg-actions">
+          {% if pkg.status != 'applied' %}
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 10px;"
+                  onclick="markApplied({{ pkg.remote_job_id }}, this)">
+            ✓ Mark Applied
+          </button>
+          {% endif %}
+          <button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px;"
+                  onclick="openPackageDetail({{ pkg.remote_job_id }})">
+            View Kit
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ATS Bar -->
+    {% if ats_score > 0 %}
+    <div class="ats-bar-row">
+      <span class="ats-label">ATS Score</span>
+      <div class="ats-bar-bg">
+        <div class="ats-bar-fill" style="width:{{ ats_score }}%;background:{{ bar_color }};"></div>
+      </div>
+      <span class="ats-score-num" style="color:{{ bar_color }};">{{ ats_score }}%</span>
+    </div>
+    {% endif %}
+
+    <!-- Copy Strip -->
+    <div class="pkg-copy-strip">
+      <button class="copy-btn" onclick="quickCopy({{ pkg.remote_job_id }}, 'cover_letter', this)">
+        <span class="copy-btn-icon">📄</span> Cover Letter
+      </button>
+      <button class="copy-btn" onclick="quickCopy({{ pkg.remote_job_id }}, 'recruiter_email', this)">
+        <span class="copy-btn-icon">✉</span> Email
+      </button>
+      <button class="copy-btn" onclick="quickCopy({{ pkg.remote_job_id }}, 'linkedin_message', this)">
+        <span class="copy-btn-icon">💼</span> LinkedIn
+      </button>
+      <button class="copy-btn" onclick="quickCopy({{ pkg.remote_job_id }}, 'email_subject', this)">
+        <span class="copy-btn-icon">📌</span> Subject Line
+      </button>
+      <button class="pkg-more-btn" onclick="openPackageDetail({{ pkg.remote_job_id }})">
+        Full Kit →
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if pagination.pages > 1 %}
+<div class="pagination">
+  <a href="?page={{ pagination.page - 1 }}"
+     class="page-btn {% if pagination.page <= 1 %}disabled{% endif %}">← Prev</a>
+  {% for p in range(1, pagination.pages + 1) %}
+  <a href="?page={{ p }}"
+     class="page-btn {% if p == pagination.page %}current{% endif %}">{{ p }}</a>
+  {% endfor %}
+  <a href="?page={{ pagination.page + 1 }}"
+     class="page-btn {% if pagination.page >= pagination.pages %}disabled{% endif %}">Next →</a>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Empty State -->
+<div class="empty-state">
+  <div class="empty-icon">📦</div>
+  <div class="empty-title">No apply packages yet</div>
+  <div class="empty-sub">Generate AI-powered cover letters and application kits from your job list</div>
+  <a href="/remote-jobs" class="btn btn-primary">◎ Browse Remote Jobs</a>
+</div>
+{% endif %}
+
+<!-- ── Package Detail Modal ── -->
+<div class="modal-overlay pkg-detail-modal" id="pkgDetailModal" onclick="closePkgModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="pkgModalTitle">Application Kit</div>
+        <div class="modal-subtitle" id="pkgModalSub">Cover letter · Email · LinkedIn · ATS</div>
+      </div>
+      <button class="modal-close" onclick="closePkgModal()">✕</button>
+    </div>
+    <div class="modal-body" id="pkgModalBody">
+      <div style="text-align:center;padding:40px;color:var(--text-muted);">Loading…</div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Package cache ──
+const _pkgCache = {};
+
+// ── Filter ──
+function filterPackages(status, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.pkg-card').forEach(card => {
+    card.style.display = (status === 'all' || card.dataset.status === status) ? '' : 'none';
+  });
+}
+
+// ── Quick copy individual field ──
+async function quickCopy(jobId, field, btn) {
+  let pkg = _pkgCache[jobId];
+  if (!pkg) {
+    try {
+      const resp = await fetch(`/api/apply-package/${jobId}`);
+      if (!resp.ok) throw new Error('Not found');
+      pkg = await resp.json();
+      _pkgCache[jobId] = pkg;
+    } catch {
+      showToast('Could not load package', 'error');
+      return;
+    }
+  }
+  let text = '';
+  if (field === 'cover_letter')     text = pkg.cover_letter || '';
+  else if (field === 'recruiter_email') text = pkg.recruiter_email || '';
+  else if (field === 'linkedin_message') text = pkg.linkedin_message || '';
+  else if (field === 'email_subject') text = pkg.email_subject || '';
+
+  if (!text) { showToast('Field is empty', 'error'); return; }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.classList.add('copied');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✓ Copied!';
+    setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = orig; }, 1800);
+  } catch {
+    showToast('Clipboard not available', 'error');
+  }
+}
+
+// ── Open full detail modal ──
+async function openPackageDetail(jobId) {
+  document.getElementById('pkgDetailModal').classList.add('active');
+  const body = document.getElementById('pkgModalBody');
+  body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Loading…</div>';
+
+  let pkg = _pkgCache[jobId];
+  if (!pkg) {
+    try {
+      const resp = await fetch(`/api/apply-package/${jobId}`);
+      if (!resp.ok) throw new Error('No package found');
+      pkg = await resp.json();
+      _pkgCache[jobId] = pkg;
+    } catch (e) {
+      body.innerHTML = `<p style="color:var(--error);padding:20px;">Error: ${e.message}</p>`;
+      return;
+    }
+  }
+
+  document.getElementById('pkgModalTitle').textContent = `${pkg.title || 'Role'} @ ${pkg.company || ''}`;
+  document.getElementById('pkgModalSub').textContent = pkg.location || 'Remote';
+
+  const ats = pkg.ats_analysis || {};
+  const atsScore = ats.score || 0;
+  const matchedKws = (ats.matched_keywords || []);
+  const missingKws = (ats.missing_keywords || []);
+  const screening = pkg.screening_answers || [];
+
+  body.innerHTML = `
+    <div class="detail-tabs" id="detailTabs">
+      <div class="detail-tab active" onclick="switchTab('cover')">Cover Letter</div>
+      <div class="detail-tab" onclick="switchTab('email')">Recruiter Email</div>
+      <div class="detail-tab" onclick="switchTab('linkedin')">LinkedIn</div>
+      <div class="detail-tab" onclick="switchTab('screening')">Screening Q&amp;A</div>
+      <div class="detail-tab" onclick="switchTab('ats')">ATS Analysis</div>
+    </div>
+
+    <div id="pane-cover" class="detail-pane active">
+      <div class="tab-header">
+        <span class="tab-title">Cover Letter</span>
+        <button class="copy-all-btn" onclick="copyField('cover_letter', ${jobId})">⎘ Copy All</button>
+      </div>
+      <div class="detail-content-box">${escHtml(pkg.cover_letter || 'Not generated')}</div>
+    </div>
+
+    <div id="pane-email" class="detail-pane">
+      <div class="tab-header">
+        <span class="tab-title">Recruiter Email</span>
+        <button class="copy-all-btn" onclick="copyField('recruiter_email', ${jobId})">⎘ Copy</button>
+      </div>
+      ${pkg.email_subject ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+        Subject: <strong style="color:var(--text-primary);">${escHtml(pkg.email_subject)}</strong>
+        <button class="copy-btn" style="display:inline-flex;margin-left:8px;" onclick="copyField('email_subject', ${jobId})">⎘ Copy Subject</button>
+      </div>` : ''}
+      <div class="detail-content-box">${escHtml(pkg.recruiter_email || 'Not generated')}</div>
+    </div>
+
+    <div id="pane-linkedin" class="detail-pane">
+      <div class="tab-header">
+        <span class="tab-title">LinkedIn Message</span>
+        <button class="copy-all-btn" onclick="copyField('linkedin_message', ${jobId})">⎘ Copy</button>
+      </div>
+      <div class="detail-content-box">${escHtml(pkg.linkedin_message || 'Not generated')}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+        ${(pkg.linkedin_message || '').length} / 300 chars
+      </div>
+    </div>
+
+    <div id="pane-screening" class="detail-pane">
+      <div class="tab-title" style="margin-bottom:12px;">Screening Answers</div>
+      ${screening.length === 0
+        ? '<p style="color:var(--text-muted);font-size:13px;">No screening answers generated.</p>'
+        : screening.map(qa => `
+          <div class="screening-item">
+            <div class="screening-q">${escHtml(qa.question || '')}</div>
+            <div class="screening-a">${escHtml(qa.answer || '')}</div>
+          </div>`).join('')
+      }
+    </div>
+
+    <div id="pane-ats" class="detail-pane">
+      <div class="tab-title" style="margin-bottom:12px;">ATS Analysis</div>
+      <div class="ats-detail-row">
+        <span style="color:var(--text-muted);">Overall ATS Score</span>
+        <strong style="font-size:18px;color:${atsScore >= 70 ? '#22c55e' : atsScore >= 50 ? '#f59e0b' : '#ef4444'};">${atsScore}%</strong>
+      </div>
+      ${ats.suggestions ? `<div class="ats-detail-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+        <span style="color:var(--text-muted);font-size:12px;">Suggestions</span>
+        <span style="font-size:13px;">${escHtml(ats.suggestions)}</span>
+      </div>` : ''}
+      ${matchedKws.length > 0 ? `<div style="margin-top:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">Matched Keywords (${matchedKws.length})</div>
+        <div class="kw-list">${matchedKws.map(k => `<span class="kw-chip kw-matched">${escHtml(k)}</span>`).join('')}</div>
+      </div>` : ''}
+      ${missingKws.length > 0 ? `<div style="margin-top:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">Missing Keywords (${missingKws.length})</div>
+        <div class="kw-list">${missingKws.map(k => `<span class="kw-chip kw-missing">${escHtml(k)}</span>`).join('')}</div>
+      </div>` : ''}
+    </div>
+
+    <div class="status-actions">
+      <button class="btn btn-ghost btn-sm" onclick="regeneratePkg(${jobId})">↻ Regenerate</button>
+      ${pkg.status !== 'applied'
+        ? `<button class="btn btn-primary btn-sm" onclick="markApplied(${jobId})">✓ Mark as Applied</button>`
+        : '<span style="font-size:12px;color:#22c55e;font-weight:700;">✓ Applied</span>'}
+      ${pkg.source_url ? `<a href="${pkg.source_url}" target="_blank" class="btn btn-ghost btn-sm">↗ Job Link</a>` : ''}
+    </div>
+  `;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.detail-tab').forEach((t, i) => {
+    const names = ['cover','email','linkedin','screening','ats'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.detail-pane').forEach(p => {
+    p.classList.toggle('active', p.id === `pane-${name}`);
+  });
+}
+
+async function copyField(field, jobId) {
+  const btn = event.currentTarget;
+  const pkg = _pkgCache[jobId] || {};
+  const text = pkg[field] || '';
+  if (!text) { showToast('Nothing to copy', 'error'); return; }
+  await navigator.clipboard.writeText(text);
+  const orig = btn.innerHTML;
+  btn.innerHTML = '✓ Copied!';
+  btn.style.color = '#22c55e';
+  setTimeout(() => { btn.innerHTML = orig; btn.style.color = ''; }, 1800);
+}
+
+function closePkgModal(e) {
+  if (!e || e.target === document.getElementById('pkgDetailModal') || e.target.classList.contains('modal-close')) {
+    document.getElementById('pkgDetailModal').classList.remove('active');
+  }
+}
+
+async function markApplied(jobId, btn) {
+  try {
+    const resp = await fetch(`/api/apply-package/${jobId}/status`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: 'applied'}),
+    });
+    if (!resp.ok) throw new Error('Failed');
+    delete _pkgCache[jobId];
+    showToast('Marked as applied!', 'success');
+    setTimeout(() => location.reload(), 800);
+  } catch {
+    showToast('Could not update status', 'error');
+  }
+}
+
+async function regeneratePkg(jobId) {
+  const body = document.getElementById('pkgModalBody');
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  delete _pkgCache[jobId];
+  try {
+    const resp = await fetch(`/api/apply-package/${jobId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regenerate: true}),
+    });
+    if (!resp.ok) throw new Error('Generation failed');
+    showToast('Package regenerated!', 'success');
+    // Reopen with fresh data
+    document.getElementById('pkgDetailModal').classList.remove('active');
+    setTimeout(() => openPackageDetail(jobId), 200);
+  } catch (e) {
+    showToast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '↻ Regenerate';
+  }
+}
+
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showToast(msg, type = 'info') {
+  const d = document.createElement('div');
+  d.className = `flash ${type}`;
+  d.innerHTML = `<span>${type==='success'?'✓':type==='error'?'✕':'ℹ'}</span> ${msg}`;
+  d.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;min-width:220px;max-width:340px;';
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 3500);
+}
+</script>
+{% endblock %}

@@ -417,7 +417,8 @@
               {{ '◆' if job.is_saved else '◇' }} Save
             </button>
             {% if job.application_status not in ('applied', 'interviewing', 'offer') %}
-            <button class="btn btn-primary btn-sm" onclick="applyWithAIPipeline({{ job.id }})" title="Apply with AI">
+            <button class="btn btn-primary btn-sm" id="genKitBtn{{ job.id }}"
+                    onclick="generateApplyKit({{ job.id }}, this)" title="Generate AI Apply Kit">
               ⚡ Apply
             </button>
             {% else %}
@@ -869,9 +870,13 @@ function renderJobModal(job) {
       <div class="jd-section-title">AI Tools</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="btn btn-ghost btn-sm" onclick="runAIMatch(${job.id})">✦ AI Match Score</button>
-        ${job.source_url ? `<a href="${job.source_url}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">Apply →</a>` : ''}
+        <button class="btn btn-primary btn-sm" id="genKitBtn${job.id}" onclick="generateApplyKit(${job.id}, this)">
+          ⚡ Generate Apply Kit
+        </button>
+        ${job.source_url ? `<a href="${job.source_url}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">↗ Job Page</a>` : ''}
       </div>
-      <div class="jd-section-title" style="margin-top:10px;">Generate</div>
+      <div id="applyKitResult${job.id}"></div>
+      <div class="jd-section-title" style="margin-top:14px;">Generate (Legacy)</div>
       <div class="proposal-types">
         <button class="proposal-type-btn" onclick="genProposal(${job.id},'cover_letter',this)">Cover Letter</button>
         <button class="proposal-type-btn" onclick="genProposal(${job.id},'proposal',this)">Freelance Proposal</button>
@@ -965,16 +970,70 @@ function copyText(btn, text) {
 
 // ── Apply with AI (redirect to pipeline apply modal) ─────────────────────────
 function applyWithAIPipeline(jobId) {
-  // First advance pipeline stage, then open apply modal on pipeline page
-  fetch(`/api/apply-pipeline/${jobId}/stage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ stage: 'HIGH_MATCH' })
-  }).then(() => {
-    window.location.href = `/apply-pipeline#job-${jobId}`;
-  }).catch(() => {
-    window.location.href = '/apply-pipeline';
-  });
+  // Generate apply kit first, then advance pipeline stage
+  generateApplyKit(jobId, null);
+}
+
+// ── Generate full Apply Kit via Resume Engine ─────────────────────────────────
+async function generateApplyKit(jobId, btn) {
+  const resultDiv = document.getElementById(`applyKitResult${jobId}`);
+  const kitBtn = btn || document.getElementById(`genKitBtn${jobId}`);
+  if (kitBtn) { kitBtn.disabled = true; kitBtn.textContent = '⏳ Generating…'; }
+  if (resultDiv) resultDiv.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;">AI is generating your cover letter, recruiter email, LinkedIn message and ATS analysis…</div>';
+
+  try {
+    const resp = await fetch(`/api/apply-package/${jobId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+    const pkg = await resp.json();
+    const ats = pkg.ats_analysis || {};
+    const score = ats.score || 0;
+    const scoreColor = score >= 70 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
+
+    if (resultDiv) {
+      resultDiv.innerHTML = `
+        <div style="background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:14px;margin-top:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <span style="font-weight:700;color:var(--text-primary);">✓ Apply Kit Ready</span>
+            <span style="font-size:14px;font-weight:800;color:${scoreColor};">ATS ${score}%</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="copyKitField(${jobId},'cover_letter',this)">📄 Cover Letter</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="copyKitField(${jobId},'recruiter_email',this)">✉ Email</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;" onclick="copyKitField(${jobId},'linkedin_message',this)">💼 LinkedIn</button>
+            <a href="/apply-packages" class="btn btn-primary btn-sm" style="font-size:11px;">View Full Kit →</a>
+          </div>
+        </div>`;
+    }
+    showToast(`Apply kit ready! ATS score: ${score}%`, 'success');
+    if (kitBtn) { kitBtn.textContent = '✓ Kit Ready'; kitBtn.style.background = 'var(--success)'; }
+  } catch (e) {
+    if (resultDiv) resultDiv.innerHTML = `<div style="color:var(--error);font-size:13px;padding:8px;">Error: ${e.message}</div>`;
+    showToast('Kit generation failed: ' + e.message, 'error');
+    if (kitBtn) { kitBtn.disabled = false; kitBtn.textContent = '⚡ Generate Apply Kit'; }
+  }
+}
+
+// ── Copy kit field (fetches from API if not cached) ───────────────────────────
+const _kitCache = {};
+async function copyKitField(jobId, field, btn) {
+  let pkg = _kitCache[jobId];
+  if (!pkg) {
+    try {
+      const r = await fetch(`/api/apply-package/${jobId}`);
+      pkg = await r.json();
+      _kitCache[jobId] = pkg;
+    } catch { showToast('Could not load kit', 'error'); return; }
+  }
+  const text = pkg[field] || '';
+  if (!text) { showToast('Field empty', 'error'); return; }
+  await navigator.clipboard.writeText(text);
+  const orig = btn.innerHTML;
+  btn.innerHTML = '✓ Copied!';
+  setTimeout(() => { btn.innerHTML = orig; }, 1800);
 }
 
 // ── Toast (reuse existing or define fallback) ─────────────────────────────────

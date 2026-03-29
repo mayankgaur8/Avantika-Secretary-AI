@@ -94,6 +94,18 @@ from app.services.client_acquisition import (
     get_templates as ca_get_templates,
     get_learning_insights as ca_get_learning_insights,
 )
+from app.services.resume_service import (
+    get_profile as rs_get_profile,
+    update_profile as rs_update_profile,
+    has_profile as rs_has_profile,
+    tailor_resume as rs_tailor_resume,
+    generate_apply_package as rs_generate_apply_package,
+    get_apply_package as rs_get_apply_package,
+    list_apply_packages as rs_list_apply_packages,
+    update_package_status as rs_update_package_status,
+    resume_ai_match as rs_ai_match,
+    get_resume_match as rs_get_resume_match,
+)
 
 
 def sync_remote_jobs() -> dict:
@@ -1602,3 +1614,158 @@ def api_outreach_templates():
 @app.get("/api/outreach/insights")
 def api_outreach_insights():
     return ca_get_learning_insights()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  RESUME-AWARE APPLICATION ENGINE
+# ═══════════════════════════════════════════════════════════════
+
+class ResumeProfilePayload(BaseModel):
+    full_name: str = ""
+    headline: str = ""
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    linkedin_url: str = ""
+    github_url: str = ""
+    portfolio_url: str = ""
+    years_experience: int = 0
+    visa_status: str = ""
+    relocation_ready: int = 1
+    salary_min: int = 0
+    salary_max: int = 0
+    salary_currency: str = "EUR"
+    summary: str = ""
+    skills: list[str] = []
+    certifications: list[str] = []
+    target_roles: list[str] = []
+    target_locations: list[str] = []
+    achievements: list[str] = []
+    languages: list[dict] = []
+
+
+class PackageStatusPayload(BaseModel):
+    status: str  # draft | ready | applied
+
+
+# ── Pages ──
+
+@app.get("/resume-profile", response_class=HTMLResponse)
+def page_resume_profile(request: Request):
+    user = get_user()
+    profile = rs_get_profile()
+    return templates.TemplateResponse(
+        "resume_profile.html",
+        {
+            "request": request,
+            "user": user,
+            "active_page": "resume_profile",
+            "profile": profile,
+            "has_profile": rs_has_profile(),
+        },
+    )
+
+
+@app.get("/apply-packages", response_class=HTMLResponse)
+def page_apply_packages(request: Request, page: int = 1):
+    user = get_user()
+    data = rs_list_apply_packages(page=page, per_page=20)
+    return templates.TemplateResponse(
+        "apply_packages.html",
+        {
+            "request": request,
+            "user": user,
+            "active_page": "apply_packages",
+            "packages": data["packages"],
+            "pagination": {
+                "total": data["total"],
+                "page": data["page"],
+                "pages": data["pages"],
+            },
+            "stats": data["stats"],
+        },
+    )
+
+
+# ── Resume Profile API ──
+
+@app.get("/api/resume/profile")
+def api_get_resume_profile():
+    return rs_get_profile()
+
+
+@app.post("/api/resume/profile")
+def api_update_resume_profile(payload: ResumeProfilePayload):
+    try:
+        updated = rs_update_profile(payload.dict(exclude_none=True))
+        return updated
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ── Tailoring API ──
+
+@app.post("/api/resume/tailor/{job_id}")
+def api_tailor_resume(job_id: int):
+    try:
+        return rs_tailor_resume(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("tailor_resume failed: job_id=%d %s", job_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Apply Package API ──
+
+@app.post("/api/apply-package/{job_id}")
+def api_generate_apply_package(job_id: int, payload: dict = {}):
+    regenerate = bool((payload or {}).get("regenerate", False))
+    try:
+        return rs_generate_apply_package(job_id, regenerate=regenerate)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("generate_apply_package failed: job_id=%d %s", job_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/apply-package/{job_id}")
+def api_get_apply_package(job_id: int):
+    pkg = rs_get_apply_package(job_id)
+    if not pkg:
+        raise HTTPException(status_code=404, detail="Package not generated yet")
+    return pkg
+
+
+@app.post("/api/apply-package/{job_id}/status")
+def api_update_package_status(job_id: int, payload: PackageStatusPayload):
+    try:
+        return rs_update_package_status(job_id, payload.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/apply-packages")
+def api_list_apply_packages(page: int = 1, per_page: int = 20):
+    return rs_list_apply_packages(page=page, per_page=per_page)
+
+
+# ── Resume AI Match API ──
+
+@app.post("/api/resume/match/{job_id}")
+def api_resume_match(job_id: int):
+    try:
+        return rs_ai_match(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/resume/match/{job_id}")
+def api_get_resume_match(job_id: int):
+    m = rs_get_resume_match(job_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="No resume match yet")
+    return m

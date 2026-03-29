@@ -1,0 +1,502 @@
+{% extends "base.html" %}
+{% block title %}Resume Profile — Avantika SecretaryAI{% endblock %}
+{% block page_title %}Resume Profile{% endblock %}
+{% block page_subtitle %}Your master resume — used to generate tailored applications{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-ghost btn-sm" id="saveBtn" onclick="saveProfile()">
+  <span>✓</span> Save Changes
+</button>
+{% endblock %}
+
+{% block head %}
+<style>
+.profile-grid { display:grid; grid-template-columns:1fr 340px; gap:20px; align-items:start; }
+@media (max-width:900px) { .profile-grid { grid-template-columns:1fr; } }
+
+.section-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:20px; }
+.section-header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border); }
+.section-title { font-size:0.85rem; font-weight:700; letter-spacing:.04em; color:var(--text-primary); }
+.section-body { padding:18px; }
+
+.profile-status { display:flex; align-items:center; gap:8px; padding:12px 18px; border-radius:10px; margin-bottom:20px; font-size:0.82rem; font-weight:600; }
+.profile-status.complete { background:rgba(16,185,129,.12); color:#10b981; border:1px solid rgba(16,185,129,.25); }
+.profile-status.empty { background:rgba(245,158,11,.12); color:#f59e0b; border:1px solid rgba(245,158,11,.25); }
+
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+@media (max-width:600px) { .form-row { grid-template-columns:1fr; } }
+.form-group { margin-bottom:14px; }
+.form-label { display:block; font-size:0.73rem; font-weight:600; color:var(--text-secondary); margin-bottom:5px; text-transform:uppercase; letter-spacing:.04em; }
+.form-input,.form-select,.form-textarea { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 11px; font-size:0.83rem; color:var(--text-primary); outline:none; box-sizing:border-box; transition:border-color .15s; }
+.form-input:focus,.form-select:focus,.form-textarea:focus { border-color:var(--accent); }
+.form-textarea { resize:vertical; min-height:80px; line-height:1.6; }
+
+/* Tags */
+.tag-input-wrap { display:flex; flex-wrap:wrap; gap:5px; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:6px 8px; min-height:40px; cursor:text; }
+.tag-input-wrap:focus-within { border-color:var(--accent); }
+.tag { display:inline-flex; align-items:center; gap:4px; background:rgba(99,102,241,.15); color:#818cf8; border-radius:4px; padding:3px 8px; font-size:0.72rem; font-weight:600; }
+.tag-remove { cursor:pointer; opacity:.6; font-size:0.9rem; line-height:1; }
+.tag-remove:hover { opacity:1; }
+.tag-input { border:none; background:transparent; outline:none; font-size:0.8rem; color:var(--text-primary); min-width:80px; flex:1; }
+
+/* Work history */
+.work-item { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:10px; }
+.work-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+.work-title { font-weight:700; font-size:0.85rem; color:var(--text-primary); }
+.work-meta { font-size:0.75rem; color:var(--text-muted); margin-top:2px; }
+.work-bullets { list-style:none; margin:8px 0 0; padding:0; }
+.work-bullets li { font-size:0.78rem; color:var(--text-secondary); padding:3px 0; padding-left:14px; position:relative; line-height:1.5; }
+.work-bullets li::before { content:"•"; position:absolute; left:0; color:var(--accent); }
+
+/* Stat chips */
+.stat-chips { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+.stat-chip { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 16px; text-align:center; flex:1; min-width:80px; }
+.stat-chip-val { font-size:1.4rem; font-weight:800; color:var(--accent); line-height:1; }
+.stat-chip-label { font-size:0.67rem; color:var(--text-muted); margin-top:3px; text-transform:uppercase; letter-spacing:.04em; }
+
+/* ATS progress */
+.ats-bar-wrap { background:var(--border); border-radius:3px; height:6px; margin:4px 0; overflow:hidden; }
+.ats-bar-fill { height:100%; border-radius:3px; background:var(--accent); transition:width .4s; }
+
+/* Achievement list */
+.achievement-item { display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.8rem; color:var(--text-secondary); line-height:1.5; }
+.achievement-item:last-child { border-bottom:none; }
+.achievement-num { width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:0.68rem; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+
+.save-toast { position:fixed; bottom:20px; right:20px; z-index:9999; background:#10b981; color:#fff; border-radius:8px; padding:10px 18px; font-size:0.82rem; font-weight:600; display:none; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if has_profile %}
+<div class="profile-status complete">
+  <span>✓</span> Resume profile loaded — {{ profile.full_name }} · {{ profile.years_experience }}yrs · {{ profile.skills|length }} skills
+</div>
+{% else %}
+<div class="profile-status empty">
+  <span>⚠</span> No profile yet — edit fields below and click Save Changes, or the system will use your pre-loaded resume data.
+</div>
+{% endif %}
+
+<!-- Stats Bar -->
+<div class="stat-chips">
+  <div class="stat-chip">
+    <div class="stat-chip-val">{{ profile.years_experience or 0 }}</div>
+    <div class="stat-chip-label">Years Exp</div>
+  </div>
+  <div class="stat-chip">
+    <div class="stat-chip-val">{{ profile.skills|length }}</div>
+    <div class="stat-chip-label">Skills</div>
+  </div>
+  <div class="stat-chip">
+    <div class="stat-chip-val">{{ profile.work_history|length }}</div>
+    <div class="stat-chip-label">Roles</div>
+  </div>
+  <div class="stat-chip">
+    <div class="stat-chip-val">{{ profile.achievements|length }}</div>
+    <div class="stat-chip-label">Achievements</div>
+  </div>
+  <div class="stat-chip">
+    <div class="stat-chip-val" style="color:#10b981;">€{{ "{:,}".format(profile.salary_max or 0) }}</div>
+    <div class="stat-chip-label">Max Target</div>
+  </div>
+</div>
+
+<div class="profile-grid">
+
+  <!-- LEFT: Main profile editor -->
+  <div>
+
+    <!-- Identity -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">◎ Identity</span>
+      </div>
+      <div class="section-body">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" class="form-input" id="f_full_name" value="{{ profile.full_name or '' }}" placeholder="Mayank Gaur">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Headline</label>
+          <input type="text" class="form-input" id="f_headline" value="{{ profile.headline or '' }}" placeholder="Senior Java Engineer & Technical Lead | 17+ Years">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-input" id="f_email" value="{{ profile.email or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="text" class="form-input" id="f_phone" value="{{ profile.phone or '' }}">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Current Location</label>
+            <input type="text" class="form-input" id="f_location" value="{{ profile.location or '' }}" placeholder="Bengaluru, India">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Years of Experience</label>
+            <input type="number" class="form-input" id="f_years_experience" value="{{ profile.years_experience or 0 }}" min="0" max="50">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">LinkedIn URL</label>
+            <input type="url" class="form-input" id="f_linkedin_url" value="{{ profile.linkedin_url or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">GitHub URL</label>
+            <input type="url" class="form-input" id="f_github_url" value="{{ profile.github_url or '' }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profile Summary -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">◆ Profile Summary</span>
+        <span style="font-size:0.7rem;color:var(--text-muted);">Used in all AI-generated materials</span>
+      </div>
+      <div class="section-body">
+        <div class="form-group">
+          <label class="form-label">Summary</label>
+          <textarea class="form-textarea" id="f_summary" style="min-height:120px;" placeholder="Results-driven Senior Java Engineer…">{{ profile.summary or '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Skills -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">⊞ Skills</span>
+        <span style="font-size:0.7rem;color:var(--text-muted);">Type skill + Enter to add</span>
+      </div>
+      <div class="section-body">
+        <div class="tag-input-wrap" id="skillsWrap" onclick="document.getElementById('skillInput').focus()">
+          {% for skill in profile.skills %}
+          <span class="tag" data-val="{{ skill }}">{{ skill }}<span class="tag-remove" onclick="removeTag(this,'skills')">×</span></span>
+          {% endfor %}
+          <input type="text" class="tag-input" id="skillInput" placeholder="Add skill…" onkeydown="addTag(event,'skills')">
+        </div>
+      </div>
+    </div>
+
+    <!-- Achievements -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">★ Key Achievements</span>
+        <span style="font-size:0.7rem;color:var(--text-muted);">Metric-rich bullets used in cover letters</span>
+      </div>
+      <div class="section-body">
+        <div id="achievementsDisplay">
+          {% for a in profile.achievements %}
+          <div class="achievement-item">
+            <div class="achievement-num">{{ loop.index }}</div>
+            <div>{{ a }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        <div style="margin-top:12px;">
+          <label class="form-label">Add / Edit Achievement (one per line in text area)</label>
+          <textarea class="form-textarea" id="f_achievements" style="min-height:120px;"
+            placeholder="• 40% improvement in system efficiency at Wipro…">{% for a in profile.achievements %}{{ a }}
+{% endfor %}</textarea>
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">One achievement per line. Include metrics.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Target Roles & Locations -->
+    <div class="section-card">
+      <div class="section-header"><span class="section-title">✈ Job Targets</span></div>
+      <div class="section-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Target Roles (Enter to add)</label>
+            <div class="tag-input-wrap" id="rolesWrap" onclick="document.getElementById('roleInput').focus()">
+              {% for r in profile.target_roles %}
+              <span class="tag" data-val="{{ r }}">{{ r }}<span class="tag-remove" onclick="removeTag(this,'roles')">×</span></span>
+              {% endfor %}
+              <input type="text" class="tag-input" id="roleInput" placeholder="Senior Java Engineer…" onkeydown="addTag(event,'roles')">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Locations</label>
+            <div class="tag-input-wrap" id="locationsWrap" onclick="document.getElementById('locationInput').focus()">
+              {% for l in profile.target_locations %}
+              <span class="tag" data-val="{{ l }}">{{ l }}<span class="tag-remove" onclick="removeTag(this,'locations')">×</span></span>
+              {% endfor %}
+              <input type="text" class="tag-input" id="locationInput" placeholder="Germany, Berlin…" onkeydown="addTag(event,'locations')">
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Visa Status</label>
+            <select class="form-select" id="f_visa_status">
+              <option value="eu_citizen" {% if profile.visa_status=='eu_citizen' %}selected{% endif %}>EU Citizen</option>
+              <option value="eu_resident" {% if profile.visa_status=='eu_resident' %}selected{% endif %}>EU Resident</option>
+              <option value="chancenkarte_applied" {% if profile.visa_status=='chancenkarte_applied' %}selected{% endif %}>Chancenkarte Applied</option>
+              <option value="requires_sponsorship" {% if profile.visa_status=='requires_sponsorship' %}selected{% endif %}>Requires Sponsorship</option>
+              <option value="other" {% if profile.visa_status=='other' %}selected{% endif %}>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Relocation Ready</label>
+            <select class="form-select" id="f_relocation_ready">
+              <option value="1" {% if profile.relocation_ready %}selected{% endif %}>Yes</option>
+              <option value="0" {% if not profile.relocation_ready %}selected{% endif %}>No</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Salary Min (EUR/yr)</label>
+            <input type="number" class="form-input" id="f_salary_min" value="{{ profile.salary_min or 0 }}" placeholder="80000">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Salary Max (EUR/yr)</label>
+            <input type="number" class="form-input" id="f_salary_max" value="{{ profile.salary_max or 0 }}" placeholder="100000">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Work History (read-only display) -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">▣ Work History</span>
+        <span style="font-size:0.7rem;color:var(--text-muted);">Pre-loaded from your resume</span>
+      </div>
+      <div class="section-body">
+        {% for job in profile.work_history %}
+        <div class="work-item">
+          <div class="work-header">
+            <div>
+              <div class="work-title">{{ job.title }} — {{ job.company }}</div>
+              <div class="work-meta">{{ job.start }} – {{ job.end }} · {{ job.location }}</div>
+            </div>
+          </div>
+          {% if job.bullets %}
+          <ul class="work-bullets">
+            {% for b in job.bullets[:3] %}
+            <li>{{ b }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:0.82rem;text-align:center;padding:20px;">
+          No work history — save your profile to load default data.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Certifications -->
+    <div class="section-card">
+      <div class="section-header"><span class="section-title">✦ Certifications</span></div>
+      <div class="section-body">
+        <div class="tag-input-wrap" id="certsWrap" onclick="document.getElementById('certInput').focus()">
+          {% for c in profile.certifications %}
+          <span class="tag" data-val="{{ c }}">{{ c }}<span class="tag-remove" onclick="removeTag(this,'certs')">×</span></span>
+          {% endfor %}
+          <input type="text" class="tag-input" id="certInput" placeholder="AWS Certified…" onkeydown="addTag(event,'certs')">
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /LEFT -->
+
+  <!-- RIGHT: Summary & quick links -->
+  <div>
+
+    <!-- Quick Actions -->
+    <div class="section-card" style="margin-bottom:20px;">
+      <div class="section-header"><span class="section-title">⚡ Quick Actions</span></div>
+      <div style="padding:14px 18px;display:flex;flex-direction:column;gap:10px;">
+        <a href="/apply-packages" class="btn btn-primary" style="text-align:center;">
+          ◈ View Apply Packages
+        </a>
+        <a href="/apply-pipeline" class="btn btn-ghost" style="text-align:center;">
+          ⚡ Apply Pipeline
+        </a>
+        <a href="/remote-jobs" class="btn btn-ghost" style="text-align:center;">
+          ◎ Browse Remote Jobs
+        </a>
+      </div>
+    </div>
+
+    <!-- Education -->
+    <div class="section-card" style="margin-bottom:20px;">
+      <div class="section-header"><span class="section-title">⊞ Education</span></div>
+      <div style="padding:14px 18px;">
+        {% for edu in profile.education %}
+        <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);">
+          <div style="font-weight:700;font-size:0.82rem;color:var(--text-primary);">{{ edu.degree }}</div>
+          <div style="font-size:0.75rem;color:var(--text-secondary);">{{ edu.field }}</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">{{ edu.institution }} · {{ edu.year_start }}–{{ edu.year_end }}</div>
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:0.8rem;">No education entries.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Languages -->
+    <div class="section-card" style="margin-bottom:20px;">
+      <div class="section-header"><span class="section-title">◉ Languages</span></div>
+      <div style="padding:14px 18px;">
+        {% for lang in profile.languages %}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:0.8rem;">
+          <span style="font-weight:600;color:var(--text-primary);">{{ lang.language }}</span>
+          <span style="color:var(--text-muted);">{{ lang.level }}</span>
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:0.8rem;">No languages listed.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Profile completeness hint -->
+    <div class="section-card">
+      <div class="section-header"><span class="section-title">◆ Profile Strength</span></div>
+      <div style="padding:14px 18px;">
+        {% set checks = [
+          (profile.full_name, "Name"),
+          (profile.summary, "Summary"),
+          (profile.skills, "Skills"),
+          (profile.achievements, "Achievements"),
+          (profile.work_history, "Work history"),
+          (profile.certifications, "Certifications"),
+          (profile.target_roles, "Target roles"),
+          (profile.salary_max, "Salary target"),
+        ] %}
+        {% set done = checks|selectattr('0')|list|length %}
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">{{ done }}/{{ checks|length }} sections complete</div>
+        <div class="ats-bar-wrap">
+          <div class="ats-bar-fill" style="width:{{ (done / checks|length * 100)|int }}%;background:{% if done >= 7 %}#10b981{% elif done >= 4 %}#f59e0b{% else %}#ef4444{% endif %};"></div>
+        </div>
+        <div style="margin-top:10px;">
+          {% for val, label in checks %}
+          <div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:0.75rem;">
+            <span style="color:{% if val %}#10b981{% else %}#ef4444{% endif %};">{% if val %}✓{% else %}✕{% endif %}</span>
+            <span style="color:{% if val %}var(--text-secondary){% else %}var(--text-muted){% endif %};">{{ label }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /RIGHT -->
+
+</div>
+
+<div class="save-toast" id="saveToast">✓ Profile saved successfully!</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Tag input system ──────────────────────────────────────────
+const _tagMaps = {
+  skills: { wrap: 'skillsWrap', input: 'skillInput' },
+  roles:  { wrap: 'rolesWrap',  input: 'roleInput' },
+  locations: { wrap: 'locationsWrap', input: 'locationInput' },
+  certs:  { wrap: 'certsWrap',  input: 'certInput' },
+};
+
+function addTag(event, field) {
+  if (event.key !== 'Enter' && event.key !== ',') return;
+  event.preventDefault();
+  const input = event.target;
+  const val = input.value.trim().replace(/,$/, '');
+  if (!val) return;
+  const wrap = document.getElementById(_tagMaps[field].wrap);
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.dataset.val = val;
+  tag.innerHTML = `${escHtml(val)}<span class="tag-remove" onclick="removeTag(this,'${field}')">×</span>`;
+  wrap.insertBefore(tag, input);
+  input.value = '';
+}
+
+function removeTag(btn, field) {
+  btn.closest('.tag').remove();
+}
+
+function getTagValues(field) {
+  const wrap = document.getElementById(_tagMaps[field].wrap);
+  return Array.from(wrap.querySelectorAll('.tag')).map(t => t.dataset.val);
+}
+
+// ── Save ──────────────────────────────────────────────────────
+async function saveProfile() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  const achievementsRaw = document.getElementById('f_achievements').value;
+  const achievements = achievementsRaw.split('\n')
+    .map(s => s.replace(/^[•\-\*]\s*/, '').trim())
+    .filter(Boolean);
+
+  const payload = {
+    full_name: document.getElementById('f_full_name').value.trim(),
+    headline: document.getElementById('f_headline').value.trim(),
+    email: document.getElementById('f_email').value.trim(),
+    phone: document.getElementById('f_phone').value.trim(),
+    location: document.getElementById('f_location').value.trim(),
+    linkedin_url: document.getElementById('f_linkedin_url').value.trim(),
+    github_url: document.getElementById('f_github_url').value.trim(),
+    years_experience: parseInt(document.getElementById('f_years_experience').value) || 0,
+    summary: document.getElementById('f_summary').value.trim(),
+    visa_status: document.getElementById('f_visa_status').value,
+    relocation_ready: parseInt(document.getElementById('f_relocation_ready').value),
+    salary_min: parseInt(document.getElementById('f_salary_min').value) || 0,
+    salary_max: parseInt(document.getElementById('f_salary_max').value) || 0,
+    salary_currency: 'EUR',
+    skills: getTagValues('skills'),
+    certifications: getTagValues('certs'),
+    target_roles: getTagValues('roles'),
+    target_locations: getTagValues('locations'),
+    achievements: achievements,
+  };
+
+  try {
+    const r = await fetch('/api/resume/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Save failed');
+    const toast = document.getElementById('saveToast');
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 2500);
+    btn.disabled = false;
+    btn.innerHTML = '<span>✓</span> Save Changes';
+  } catch (e) {
+    showToast('Save failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<span>✓</span> Save Changes';
+  }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, level) {
+  const t = document.createElement('div');
+  t.className = 'flash ' + level;
+  t.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;max-width:320px;';
+  t.innerHTML = `<span>${level==='success'?'✓':'✕'}</span> ${escHtml(msg)}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+</script>
+{% endblock %}
