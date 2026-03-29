@@ -506,29 +506,29 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # whatsapp_messages migrations
     if not _has_column(conn, "whatsapp_messages", "wa_intent"):
         conn.execute("ALTER TABLE whatsapp_messages ADD COLUMN wa_intent TEXT")
-    # remote_jobs migrations (new columns added over time)
-    if not _has_table(conn, "remote_jobs"):
-        return  # tables created fresh via SCHEMA above
-    if not _has_column(conn, "remote_jobs", "quick_score"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN quick_score INTEGER DEFAULT 0")
-    if not _has_column(conn, "remote_jobs", "follow_up_date"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN follow_up_date TEXT")
-    if not _has_column(conn, "remote_jobs", "salary_discussed"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN salary_discussed INTEGER")
-    # Client Acquisition additions (no-op if tables just created)
+    # remote_jobs migrations (new columns added over time).
+    # Guard each block individually — no early return, so ALL migrations always run.
+    if _has_table(conn, "remote_jobs"):
+        if not _has_column(conn, "remote_jobs", "quick_score"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN quick_score INTEGER DEFAULT 0")
+        if not _has_column(conn, "remote_jobs", "follow_up_date"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN follow_up_date TEXT")
+        if not _has_column(conn, "remote_jobs", "salary_discussed"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN salary_discussed INTEGER")
+        # Apply Engine additions
+        if not _has_column(conn, "remote_jobs", "pipeline_stage"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN pipeline_stage TEXT DEFAULT 'DISCOVERED'")
+        if not _has_column(conn, "remote_jobs", "income_priority_score"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN income_priority_score INTEGER DEFAULT 0")
+        if not _has_column(conn, "remote_jobs", "is_fast_pay"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN is_fast_pay INTEGER DEFAULT 0")
+        if not _has_column(conn, "remote_jobs", "apply_kit_ready"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN apply_kit_ready INTEGER DEFAULT 0")
+        if not _has_column(conn, "remote_jobs", "last_stage_changed_at"):
+            conn.execute("ALTER TABLE remote_jobs ADD COLUMN last_stage_changed_at TEXT")
+    # Client Acquisition seeding (always runs regardless of remote_jobs state)
     if _has_table(conn, "outreach_companies"):
         _seed_outreach_templates(conn)
-    # Apply Engine additions
-    if not _has_column(conn, "remote_jobs", "pipeline_stage"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN pipeline_stage TEXT DEFAULT 'DISCOVERED'")
-    if not _has_column(conn, "remote_jobs", "income_priority_score"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN income_priority_score INTEGER DEFAULT 0")
-    if not _has_column(conn, "remote_jobs", "is_fast_pay"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN is_fast_pay INTEGER DEFAULT 0")
-    if not _has_column(conn, "remote_jobs", "apply_kit_ready"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN apply_kit_ready INTEGER DEFAULT 0")
-    if not _has_column(conn, "remote_jobs", "last_stage_changed_at"):
-        conn.execute("ALTER TABLE remote_jobs ADD COLUMN last_stage_changed_at TEXT")
 
 
 def _seed_outreach_templates(conn: sqlite3.Connection) -> None:

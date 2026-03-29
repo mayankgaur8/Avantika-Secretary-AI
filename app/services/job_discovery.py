@@ -256,16 +256,17 @@ def _parse_json_object(resp: httpx.Response, source: str) -> dict[str, Any]:
 def _fetch_remotive(client: httpx.Client) -> dict[str, Any]:
     """
     Remotive public API — free, no auth required.
-    https://remotive.com/api/remote-jobs?category=software-dev&search=java&limit=100
+    NOTE: Do NOT add a 'search' param — it causes Remotive to return 0 results
+    for multi-word queries on Azure. The bare category filter returns all
+    software-dev jobs; scoring/filtering happens post-fetch via quick_score.
+    https://remotive.com/api/remote-jobs?category=software-dev
     """
     params = {
         "category": "software-dev",
-        "search": "java spring backend",
-        "limit": 100,
+        # "search" intentionally omitted — see note above
     }
     url = "https://remotive.com/api/remote-jobs"
-    logger.info("Fetching from Remotive...")
-    logger.info("API URL: %s", url)
+    logger.info("Fetching from Remotive (params=%s)…", params)
     try:
         resp = client.get(url, params=params, timeout=20, headers=_DEFAULT_HEADERS)
         logger.info("Status: %s", resp.status_code)
@@ -730,6 +731,15 @@ def sync_all_sources() -> dict:
                 skip_no_title, skip_no_ext_id, skip_no_url, src_job_errors,
             )
 
+            # Capture first normalized job for diagnostic surfacing
+            first_normalized: dict | None = None
+            if jobs:
+                fn = jobs[0]
+                first_normalized = {
+                    k: (v[:200] if isinstance(v, str) and k == "description" else v)
+                    for k, v in fn.items()
+                }
+
             source_stats.append({
                 "source": source_name,
                 "url": fetch_result.get("url"),
@@ -740,9 +750,12 @@ def sync_all_sources() -> dict:
                 "inserted": src_new,
                 "updated": src_updated,
                 "skipped": src_skipped,
+                "skip_no_title": skip_no_title,
+                "skip_no_ext_id": skip_no_ext_id,
                 "warned_no_url": skip_no_url,
                 "job_errors": src_job_errors,
                 "error": fetch_result.get("error"),
+                "_first_normalized": first_normalized,  # removed from final response after aggregation
             })
             if fetch_result.get("error") or src_job_errors:
                 total_errors += 1
@@ -751,34 +764,56 @@ def sync_all_sources() -> dict:
             total_skipped += src_skipped
 
     # Verify DB state after all inserts
+    db_total_all = db_total_visible = -1
     try:
         with get_conn() as conn:
-            db_total = conn.execute("SELECT COUNT(*) FROM remote_jobs WHERE is_hidden=0").fetchone()[0]
+            db_total_all = conn.execute("SELECT COUNT(*) FROM remote_jobs").fetchone()[0]
+            db_total_visible = conn.execute(
+                "SELECT COUNT(*) FROM remote_jobs WHERE is_hidden=0"
+            ).fetchone()[0]
             db_new_today = conn.execute(
                 "SELECT COUNT(*) FROM remote_jobs WHERE date(created_at)=date('now')"
             ).fetchone()[0]
         logger.info(
-            "DB state after sync: total_visible=%d inserted_today=%d",
-            db_total, db_new_today,
+            "DB state after sync: total_all=%d total_visible=%d inserted_today=%d",
+            db_total_all, db_total_visible, db_new_today,
         )
     except Exception as exc:
         logger.error("DB count check after sync failed: %s", exc, exc_info=True)
-        db_total = -1
+
+    # Collect aggregate skip counters across sources
+    agg_skip_no_title = sum(s.get("skip_no_title", 0) for s in source_stats)
+    agg_skip_no_ext_id = sum(s.get("skip_no_ext_id", 0) for s in source_stats)
+    agg_skip_no_url = sum(s.get("warned_no_url", 0) for s in source_stats)
+
+    # Grab first normalized job from remotive for inspection
+    first_norm: dict | None = None
+    for s in source_stats:
+        if s.get("source") == "remotive" and s.get("_first_normalized"):
+            first_norm = s.pop("_first_normalized")
+            break
 
     result = {
-        "total_new": total_new,       # alias kept for backwards compat
+        "total_new": total_new,       # backwards compat alias
         "inserted": total_new,
         "updated": total_updated,
         "duplicates_skipped": total_skipped,
+        "skip_no_title": agg_skip_no_title,
+        "skip_no_ext_id": agg_skip_no_ext_id,
+        "skip_no_url": agg_skip_no_url,
         "errors": total_errors,
-        "db_total_visible": db_total,
+        "db_total_all": db_total_all,
+        "db_total_visible": db_total_visible,
+        "first_normalized_job": first_norm,
         "sources": source_stats,
         "synced_at": datetime.utcnow().isoformat(),
     }
     _log_discovery_run("remote_job_sync", "success", json.dumps(result))
     logger.info(
-        "Remote job sync complete: inserted=%d updated=%d skipped=%d errors=%d db_total=%d",
-        total_new, total_updated, total_skipped, total_errors, db_total,
+        "Remote job sync complete: inserted=%d updated=%d skipped=%d errors=%d "
+        "db_total_all=%d db_total_visible=%d",
+        total_new, total_updated, total_skipped, total_errors,
+        db_total_all, db_total_visible,
     )
     return result
 

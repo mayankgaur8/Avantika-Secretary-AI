@@ -69,6 +69,7 @@ from app.services.job_discovery import (
     ai_match_job, generate_proposal,
     get_travel_widget, get_discovery_stats,
     get_proposals_for_job, list_applied_jobs,
+    _fetch_remotive, _upsert_job,
 )
 from app.services.apply_engine import (
     advance_pipeline, batch_advance_all_pipelines,
@@ -1051,6 +1052,121 @@ def api_sync_remote_jobs():
     except Exception as exc:
         logger.error("Manual sync failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/remote-jobs/debug")
+def api_remote_jobs_debug():
+    """
+    End-to-end pipeline diagnostic. Runs every stage inline and returns the
+    full trace so you can pinpoint exactly where the pipeline breaks.
+    Safe to call in production — inserts are real and will appear in /api/remote-jobs.
+    """
+    from app.db import get_conn as _get_conn
+
+    out: dict = {}
+
+    # ── Stage 1: DB baseline ──────────────────────────────────────────────────
+    try:
+        with _get_conn() as conn:
+            total_all = conn.execute("SELECT COUNT(*) FROM remote_jobs").fetchone()[0]
+            total_visible = conn.execute(
+                "SELECT COUNT(*) FROM remote_jobs WHERE is_hidden=0"
+            ).fetchone()[0]
+            sample = conn.execute(
+                "SELECT id, source, external_id, title, company, is_hidden, created_at "
+                "FROM remote_jobs ORDER BY id DESC LIMIT 3"
+            ).fetchall()
+            cols_raw = conn.execute("PRAGMA table_info(remote_jobs)").fetchall()
+            columns = [r[1] for r in cols_raw]
+        out["stage1_db_baseline"] = {
+            "total_all_rows": total_all,
+            "total_visible_rows": total_visible,
+            "latest_3_jobs": [dict(r) for r in sample],
+            "remote_jobs_columns": columns,
+        }
+    except Exception as exc:
+        out["stage1_db_baseline"] = {"error": str(exc)}
+
+    # ── Stage 2: Fetch from Remotive (same function as sync) ─────────────────
+    try:
+        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+            fetch_result = _fetch_remotive(client)
+        jobs = fetch_result.get("jobs") or []
+        first_raw_keys = list(jobs[0].keys()) if jobs else []
+        first_normalized = jobs[0] if jobs else None
+        if first_normalized:
+            # Truncate description to keep response readable
+            first_normalized = {**first_normalized,
+                                 "description": (first_normalized.get("description") or "")[:200]}
+        out["stage2_fetch"] = {
+            "http_status": fetch_result.get("status_code"),
+            "response_length": fetch_result.get("response_length"),
+            "fetched_count": fetch_result.get("fetched_count"),
+            "parsed_count": fetch_result.get("parsed_count"),
+            "fetch_error": fetch_result.get("error"),
+            "first_normalized_job_keys": first_raw_keys,
+            "first_normalized_job": first_normalized,
+        }
+    except Exception as exc:
+        out["stage2_fetch"] = {"error": str(exc)}
+        jobs = []
+
+    # ── Stage 3: Upsert first job into DB ────────────────────────────────────
+    first_job = jobs[0] if jobs else None
+    if first_job:
+        try:
+            is_new, job_db_id = _upsert_job(first_job)
+            out["stage3_upsert_first_job"] = {
+                "is_new_insert": is_new,
+                "db_id": job_db_id,
+                "external_id": first_job.get("external_id"),
+                "title": first_job.get("title"),
+                "company": first_job.get("company"),
+                "source_url": first_job.get("source_url"),
+                "error": None,
+            }
+        except Exception as exc:
+            out["stage3_upsert_first_job"] = {
+                "is_new_insert": None,
+                "db_id": None,
+                "error": str(exc),
+                "job": {k: v for k, v in first_job.items() if k != "description"},
+            }
+    else:
+        out["stage3_upsert_first_job"] = {"skipped": "no jobs from fetch"}
+
+    # ── Stage 4: Read back immediately ───────────────────────────────────────
+    try:
+        with _get_conn() as conn:
+            total_all_after = conn.execute("SELECT COUNT(*) FROM remote_jobs").fetchone()[0]
+            total_visible_after = conn.execute(
+                "SELECT COUNT(*) FROM remote_jobs WHERE is_hidden=0"
+            ).fetchone()[0]
+            latest = conn.execute(
+                "SELECT id, source, external_id, title, company, is_hidden, pipeline_stage, quick_score, created_at "
+                "FROM remote_jobs ORDER BY id DESC LIMIT 5"
+            ).fetchall()
+        out["stage4_db_after_upsert"] = {
+            "total_all_rows": total_all_after,
+            "total_visible_rows": total_visible_after,
+            "delta_from_baseline": total_all_after - out.get("stage1_db_baseline", {}).get("total_all_rows", 0),
+            "latest_5_jobs": [dict(r) for r in latest],
+        }
+    except Exception as exc:
+        out["stage4_db_after_upsert"] = {"error": str(exc)}
+
+    # ── Stage 5: list_remote_jobs result ─────────────────────────────────────
+    try:
+        listed = list_remote_jobs(page=1, per_page=5)
+        out["stage5_list_remote_jobs"] = {
+            "total": listed.get("total"),
+            "returned": len(listed.get("jobs") or []),
+            "first_job_title": (listed.get("jobs") or [{}])[0].get("title") if listed.get("total") else None,
+        }
+    except Exception as exc:
+        out["stage5_list_remote_jobs"] = {"error": str(exc)}
+
+    return out
 
 
 @app.get("/api/remote-jobs/stats")
